@@ -161,10 +161,8 @@ button.ghost:hover{border-color:var(--muted); background:var(--bg)}
 .phone-body{
   position:absolute; inset:0;
   border-radius:calc(var(--pw) * var(--p-radius));
-  background:
-    linear-gradient(103deg,
-      #5d626c 0%, #c9cdd5 6%, #eef1f5 10%, #9ba1ab 20%,
-      #787e88 46%, #868c96 62%, #dfe3e9 88%, #7b818b 95%, #4e535c 100%);
+  /* base colour is set from JS (railGradient) so it can be themed per phone */
+  background:#8a909a;
   box-shadow:
     0 0 0 0.5px rgba(255,255,255,.22),
     inset 0 1px 1px rgba(255,255,255,.5),

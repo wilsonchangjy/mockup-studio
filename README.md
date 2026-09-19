@@ -13,6 +13,7 @@ only let you put **one** device in a composition.
 ## What it does
 
 - Two iPhone 13 mini mockups floating in a 3D scene, each playing its own footage
+- Per-phone chassis colour, with the metal's highlight banding derived from it
 - Deterministic drift, bob, tilt and roll — layered sines, not random jitter
 - A depth "swap": one phone holds focus, then they trade places with real
   depth-of-field
@@ -69,6 +70,7 @@ Roughly 4 minutes per 450 frames at `--scale 1`, ~10 minutes at `--scale 2`.
 | Control | What it does |
 | --- | --- |
 | **Phone size / Zoom** | Base device width, and overall scene scale |
+| **Phone A / B body** | Chassis colour, per phone. The metallic banding is derived from whatever you pick, so it stays convincing from near-black to near-white |
 | **Perspective** | Lower is more dramatic. 2400 is a calm default |
 | **Choreography** | The depth swap — Phone A leads until *Swap at*, then they trade |
 | **Back blur** | Depth-of-field on whichever phone is behind |
@@ -82,6 +84,10 @@ commit, Escape to revert, arrow keys to step (Shift for 10×). Each section has
 its own `reset` on hover, alongside **Reset all**.
 
 Drag the divider to resize the panel; double-click it to snap back.
+
+Real iPhone 13 mini finishes, if you want them: Midnight `#1f2126`,
+Starlight `#f2e8dc`, Blue `#2b4f77`, Pink `#e0c5c2`, Green `#4a5d52`,
+Product RED `#a8202f`.
 
 Keep motion amplitudes low. If a viewer notices the movement instead of the
 interface, it's too much.

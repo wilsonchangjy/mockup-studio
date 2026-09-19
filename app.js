@@ -25,6 +25,37 @@ function noise(t, seed) {
        + Math.sin(t * 2.613 + seed * 5.37) * 0.10;
 }
 
+/* --------------------------- device colour --------------------------
+   The rail reads as anodised metal because of its highlight/shadow banding,
+   not its hue. So rather than flat-filling the body, mix the chosen colour
+   toward white and black at fixed stops — that keeps the material convincing
+   for anything from Midnight to Starlight. */
+function hexToRgb(hex) {
+  const h = hex.replace('#', '').trim();
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(f, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+const mix = ({ r, g, b }, target, amt) => {
+  const t = target === 'white' ? 255 : 0;
+  const m = (c) => Math.round(c + (t - c) * amt);
+  return `rgb(${m(r)},${m(g)},${m(b)})`;
+};
+
+// offset %, direction, amount — tuned against the original aluminium gradient
+const RAIL_STOPS = [
+  [0,   'black', 0.35], [6,  'white', 0.55], [10, 'white', 0.75],
+  [20,  'white', 0.15], [46, 'black', 0.18], [62, 'black', 0.08],
+  [88,  'white', 0.62], [95, 'black', 0.12], [100,'black', 0.42],
+];
+
+function railGradient(hex) {
+  const rgb = hexToRgb(hex);
+  const stops = RAIL_STOPS.map(([at, dir, amt]) => `${mix(rgb, dir, amt)} ${at}%`);
+  return `linear-gradient(103deg, ${stops.join(', ')})`;
+}
+
 /* ------------------------------- state ------------------------------ */
 
 const DEFAULTS = {
@@ -52,6 +83,7 @@ const DEFAULTS = {
 
   a: {
     baseX: -370, baseY: 0, rotX: 0, rotY: 14, rotZ: -3, scale: 1,
+    bodyColor: '#8a909a',
     bobAmp: 16, bobSpeed: 0.55,
     swayAmp: 9,  swaySpeed: 0.38,
     zAmp: 26,    zSpeed: 0.31,
@@ -63,6 +95,7 @@ const DEFAULTS = {
 
   b: {
     baseX: 370, baseY: 0, rotX: 0, rotY: -14, rotZ: 3, scale: 1,
+    bodyColor: '#8a909a',
     bobAmp: 16, bobSpeed: 0.55,
     swayAmp: 9,  swaySpeed: 0.38,
     zAmp: 26,    zSpeed: 0.31,
@@ -207,6 +240,12 @@ function applyPhone(t, key) {
     `rotateX(${pose.rotX.toFixed(3)}deg) rotateY(${pose.rotY.toFixed(3)}deg) rotateZ(${pose.rotZ.toFixed(3)}deg)`;
 
   e.body.style.filter = pose.blur > 0.01 ? `blur(${pose.blur.toFixed(2)}px)` : 'none';
+
+  const col = STATE[key].bodyColor;
+  if (e._col !== col) {
+    e.body.style.background = railGradient(col);
+    e._col = col;
+  }
 
   // specular sweep tracks the tilt, so the glass reads as a real surface
   e.glare.style.setProperty('--glare-angle', (115 - pose.rotY * 1.8).toFixed(2) + 'deg');
@@ -392,6 +431,8 @@ const SCHEMA = [
     R('scene.vignette',   'Vignette',    0, 1, 0.01, ''),
     { k: 'scene.bgTop',    label: 'BG top',    type: 'color' },
     { k: 'scene.bgBottom', label: 'BG bottom', type: 'color' },
+    { k: 'a.bodyColor',    label: 'Phone A body', type: 'color' },
+    { k: 'b.bodyColor',    label: 'Phone B body', type: 'color' },
   ]},
 
   { title: 'Shadow', items: [
