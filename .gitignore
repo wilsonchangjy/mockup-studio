@@ -1,0 +1,16 @@
+# local machine state
+config.json
+state.json
+state.backup.json
+.render.lock
+
+# footage + renders
+media/
+out/
+frames/
+
+# deps
+node_modules/
+
+# macOS
+.DS_Store
