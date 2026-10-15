@@ -1,0 +1,25 @@
+# Cloudflare Pages response headers. Vite copies this file to dist/ as-is.
+
+# Every page: basic hardening. Camera, microphone and location are never used.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# Vite's build output (JS, CSS, fonts). Every filename carries a content
+# hash, so a changed file gets a new URL and these can be cached forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Device models, lighting panoramas and template renders keep their names
+# when they're updated, so they can't be immutable. A week fresh, then up to
+# a month served from cache while the browser checks for a new copy in the
+# background. Rename the file if an update must reach everyone at once.
+/models/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=2592000
+
+/environments/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=2592000
+
+/templates/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=2592000

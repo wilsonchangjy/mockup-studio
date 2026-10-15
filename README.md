@@ -136,6 +136,11 @@ browsers only enable on secure origins, and localhost counts as one. Opening
 `dist/` is a plain static site. Upload it to any static host: Vercel,
 Netlify, GitHub Pages, Cloudflare Pages. There is no server component.
 
+It's hosted on Cloudflare Pages: build command `npm run build`, output
+directory `dist`. `public/_headers` sets the caching there: Vite's hashed
+files are cached for good, models and lighting panoramas for a week. Other
+hosts ignore that file.
+
 ## Using it
 
 | | |
