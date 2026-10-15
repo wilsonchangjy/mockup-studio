@@ -1,16 +1,34 @@
-# local machine state
-config.json
-state.json
-state.backup.json
-.render.lock
+# the original pilot — kept locally for reference, not part of this repo
+pilot/
 
-# footage + renders
-media/
-out/
-frames/
-
-# deps
+# build output, caches and dependencies
+dist/
 node_modules/
+.vite/
+*.log
+npm-debug.log*
 
-# macOS
+# local tooling and test media
+.claude/launch.json
+.claude/settings.local.json
+
+# local secrets
+.env
+.env.*
+
+# editors and OS files
+.vscode/
+.idea/
+*.swp
 .DS_Store
+Thumbs.db
+
+# export samples you keep locally
+Test Exports/
+
+# raw model downloads (processed copies live in public/models)
+/Models/
+
+# working notes
+HANDOFF.md
+QUALITYCHECK.md

@@ -2,102 +2,213 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mockup Studio</title>
-<link rel="stylesheet" href="style.css">
+<meta name="description" content="Compose 3D device mockups from your screen recordings and export them as video or images, entirely in your browser.">
+<script>
+  /* apply the saved theme before first paint, so there's no light/dark flash */
+  try {
+    const t = JSON.parse(localStorage.getItem('mockup-studio.v2.prefs') || '{}').theme;
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch {}
+</script>
 </head>
 <body>
 
-<aside id="panel">
-  <header class="panel-head">
-    <h1>Mockup Studio</h1>
-    <button id="btn-reset" class="ghost" title="Reset every setting to defaults">Reset all</button>
+<div id="app">
+  <!-- ============================ left ============================ -->
+  <aside id="left" class="panel" aria-label="Panels">
+    <span class="plus tl" aria-hidden="true">+</span>
+    <h1 class="word">Mockup<span>Stu<span class="di">di</span>o</span></h1>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="scene" type="button">Scene</button>
+      <button role="tab" data-tab="assets" type="button">Assets <span class="count" id="asset-count" hidden></span></button>
+      <button role="tab" data-tab="export" type="button">Export</button>
+    </nav>
+
+    <section class="tab-body" data-body="scene">
+      <button class="scene-row" id="scene-row" type="button">
+        <span class="txt"><b>Scene settings</b><small>Frame, camera, background, light</small></span>
+        <span class="go" aria-hidden="true">→</span>
+        <span class="badge sel">SCENE</span>
+      </button>
+      <div class="devices">
+        <div class="sh">
+          <span>Devices <span class="count" id="device-count">0</span></span>
+          <button class="text-btn" id="head-action" type="button">Templates</button>
+        </div>
+        <ul class="device-list" id="device-list"></ul>
+        <p class="empty-note" id="device-empty">No devices yet. Add one, start from a template, or drop footage onto the stage.</p>
+        <button class="btn wide add-btn" id="main-action" type="button" aria-haspopup="menu" aria-expanded="false">Add device</button>
+      </div>
+    </section>
+
+    <section class="tab-body" data-body="assets" hidden>
+      <label class="dropzone dots" id="asset-drop">
+        <input type="file" id="asset-input" multiple accept="video/*,image/*">
+        <b>Upload media ↑</b>
+        <small>Screen recordings or images. Drag here or click.</small>
+      </label>
+      <div class="library">
+        <div class="sh"><span>Library <span class="count" id="library-count">0</span></span></div>
+        <ul class="asset-list" id="asset-list"></ul>
+        <p class="empty-note" id="asset-empty">Nothing here yet. Uploaded media appears here — drag it onto any device’s screen to place it.</p>
+      </div>
+    </section>
+
+    <section class="tab-body" data-body="export" hidden>
+      <div class="export-fields">
+        <div class="field">
+          <label>Format</label>
+          <div class="opts" id="fmt-seg" role="radiogroup" aria-label="Format">
+            <button data-v="mp4" type="button">Video</button>
+            <button data-v="png" type="button">PNG</button>
+            <button data-v="jpg" type="button">JPG</button>
+          </div>
+        </div>
+        <div class="field only-image">
+          <label>Size</label>
+          <div class="opts" id="size-seg" role="radiogroup" aria-label="Size">
+            <button data-v="1" type="button">1×</button>
+            <button data-v="2" type="button">2×</button>
+          </div>
+        </div>
+        <label class="check only-png" title="Untick for a transparent PNG: just the devices and their soft shadows"><input type="checkbox" id="exp-background" checked> Show background</label>
+        <div class="field only-video">
+          <label for="bitrate">Quality</label>
+          <div class="slider">
+            <input type="range" id="bitrate" min="1" max="100" step="1" aria-label="Video quality, 1 to 100">
+            <output id="bitrate-out" for="bitrate"></output>
+          </div>
+        </div>
+      </div>
+      <dl class="summary" id="export-summary"></dl>
+      <p class="note licence" id="export-licence" hidden></p>
+      <button class="btn wide" id="export-go" type="button">Export video</button>
+      <div class="card-box" id="export-progress" hidden>
+        <div class="head"><b id="export-title">Exporting</b><span class="mono" id="export-pct">0%</span></div>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Export progress"><div id="export-fill"></div></div>
+        <div class="progress-row"><span id="export-msg">Preparing…</span><button class="text-btn" id="export-cancel" type="button">Cancel</button></div>
+      </div>
+      <div class="card-box" id="export-result" hidden></div>
+    </section>
+
+    <footer class="panel-foot">
+      <div class="theme" id="theme-seg" role="radiogroup" aria-label="Appearance">
+        <button data-v="system" type="button" title="Match the system">SYSTEM</button>
+        <button data-v="light" type="button">LIGHT</button>
+        <button data-v="dark" type="button">DARK</button>
+      </div>
+      <button class="text-btn" id="open-about" type="button">About</button>
+    </footer>
+  </aside>
+
+  <!-- ============================ stage =========================== -->
+  <main id="stage" aria-label="Stage">
+    <span class="plus tl" aria-hidden="true">+</span><span class="plus tr" aria-hidden="true">+</span>
+    <span class="plus bl" aria-hidden="true">+</span><span class="plus br" aria-hidden="true">+</span>
+    <div class="stage-bar">
+      <span class="dim" id="out-label"></span>
+      <span class="rendering" id="render-status" hidden><i aria-hidden="true"></i>RENDERING <span id="render-time">0.00s</span></span>
+      <span class="bar-acts">
+        <button class="small-btn" id="ui-btn" type="button" title="Show or hide the labels over the render (H)"><span>Hide UI</span> <kbd>H</kbd></button>
+        <button class="small-btn" id="frame-btn" type="button" title="Reframe the selection, or everything (F)">Reframe <kbd>F</kbd></button>
+      </span>
+    </div>
+
+    <div id="viewport-host" class="dots">
+      <div class="overlay" id="overlay"></div>
+      <button class="small-btn sel-media" id="sel-media" type="button" hidden>Replace media</button>
+      <button class="small-btn screen-chip" id="screen-chip" type="button" hidden>Replace media</button>
+      <label class="empty-drop" id="empty-drop" hidden>
+        <input type="file" id="empty-input" multiple accept="video/*,image/*">
+        <span class="plus" aria-hidden="true" style="left: -7px; top: -7px">+</span>
+        <span class="plus" aria-hidden="true" style="right: -7px; bottom: -7px">+</span>
+        <b>Drop footage here</b>
+        <span>Screen recordings or images. Each file gets a matching device, picked by its resolution.</span>
+        <u>or browse files</u>
+      </label>
+      <div class="export-veil" id="export-veil" hidden>
+        <div>
+          <b id="veil-title">Exporting video</b>
+          <div class="bar" aria-hidden="true"><div id="veil-fill"></div></div>
+          <span>Keep this tab open. The scene is locked until it’s done.</span>
+        </div>
+      </div>
+      <p class="stage-hint" id="stage-hint" hidden>Click a device to edit it · click empty space for the scene</p>
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <div class="transport">
+      <button class="play" id="play" type="button" title="Play / pause (Space)" aria-label="Play">
+        <svg viewBox="0 0 24 24" class="i-play" aria-hidden="true"><path d="M6 3.5v17l14-8.5z"/></svg>
+        <svg viewBox="0 0 24 24" class="i-pause" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+      </button>
+      <span class="time" id="time-label">0.00</span>
+      <input type="range" id="scrub" min="0" max="8" step="0.001" value="0" aria-label="Timeline">
+      <span class="time dim" id="dur-label">8.00s</span>
+    </div>
+  </main>
+
+  <!-- ============================ right =========================== -->
+  <aside id="right" class="panel" aria-label="Inspector">
+    <span class="plus tr" aria-hidden="true">+</span>
+    <div id="inspector"></div>
+  </aside>
+</div>
+
+<!-- =========================== dialogs ============================ -->
+<dialog id="start-dialog" class="sheet start" aria-labelledby="start-title">
+  <span class="plus tl" aria-hidden="true">+</span><span class="plus tr" aria-hidden="true">+</span>
+  <span class="plus bl" aria-hidden="true">+</span><span class="plus br" aria-hidden="true">+</span>
+  <header class="sheet-head">
+    <div>
+      <h2 id="start-title">Start a <span class="dotted">mockup</span></h2>
+      <p>Upload your recordings and we'll pick the devices and set the scene — or start from a template.</p>
+    </div>
+    <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
   </header>
-
-  <div id="controls"></div>
-
-  <footer class="panel-foot">
-    <div class="export-opts">
-      <label for="exp-scale">Quality</label>
-      <select id="exp-scale">
-        <option value="1">1x — fast</option>
-        <option value="2" selected>2x — crisp</option>
-      </select>
-      <label for="exp-preset">Encode</label>
-      <select id="exp-preset">
-        <option value="medium" selected>medium</option>
-        <option value="slow">slow</option>
-        <option value="veryfast">veryfast</option>
-      </select>
+  <div class="start-grid">
+    <label class="upload-card dots" id="start-drop">
+      <input type="file" id="start-input" multiple accept="video/*,image/*">
+      <span class="txt">
+        <b>Upload files ↑</b>
+        <span>Drop screen recordings or images here. We'll match each to a device by its resolution.</span>
+      </span>
+      <em id="start-status"></em>
+    </label>
+    <div class="templates-col">
+      <div class="sh"><span>Templates <span class="count" id="template-count"></span></span></div>
+      <div class="templates" id="template-grid"></div>
     </div>
-
-    <button id="btn-export" class="primary">Export video</button>
-
-    <div id="export-live" hidden>
-      <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
-      <div class="status-row">
-        <span id="export-msg">Starting…</span>
-        <button id="btn-cancel" class="ghost">Cancel</button>
-      </div>
-    </div>
-
-    <div id="export-result" hidden></div>
+  </div>
+  <footer class="sheet-foot" id="start-foot" hidden>
+    <span class="dim">Your last scene is saved on this device.</span>
+    <button class="btn" id="continue-last" type="button">Continue last scene</button>
   </footer>
-</aside>
+</dialog>
 
-<div id="splitter" title="Drag to resize"></div>
+<dialog id="about-dialog" class="sheet about" aria-labelledby="about-title">
+  <span class="plus tl" aria-hidden="true">+</span><span class="plus tr" aria-hidden="true">+</span>
+  <span class="plus bl" aria-hidden="true">+</span><span class="plus br" aria-hidden="true">+</span>
+  <div id="about-body"></div>
+</dialog>
 
-<main id="viewport">
-  <div id="fit">
-    <div id="stage">
-      <div id="world">
-        <div class="shadow" data-shadow="a"></div>
-        <div class="shadow" data-shadow="b"></div>
-
-        <div class="phone" data-phone="a">
-          <div class="phone-body">
-            <div class="phone-rail"></div>
-            <div class="phone-screen">
-              <video data-video="a" muted playsinline preload="auto"></video>
-              <canvas data-canvas="a" class="screen-canvas"></canvas>
-              <div class="notch"></div>
-              <div class="glare"></div>
-              <button class="screen-drop" type="button" title="Choose a video or image">
-                <span class="plus" aria-hidden="true">+</span>
-                <span class="drop-label">Add footage</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="phone" data-phone="b">
-          <div class="phone-body">
-            <div class="phone-rail"></div>
-            <div class="phone-screen">
-              <video data-video="b" muted playsinline preload="auto"></video>
-              <canvas data-canvas="b" class="screen-canvas"></canvas>
-              <div class="notch"></div>
-              <div class="glare"></div>
-              <button class="screen-drop" type="button" title="Choose a video or image">
-                <span class="plus" aria-hidden="true">+</span>
-                <span class="drop-label">Add footage</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div id="vignette"></div>
-    </div>
+<div class="desktop-only dots" id="desktop-only" hidden>
+  <p class="word">Mockup<span>Stu<span class="di">di</span>o</span></p>
+  <div class="card">
+    <span class="plus" aria-hidden="true" style="left: -7px; top: -7px">+</span>
+    <span class="plus" aria-hidden="true" style="right: -7px; bottom: -7px">+</span>
+    <h2>Mockup Studio is built for desktop</h2>
+    <p>Composing 3D scenes needs a large screen, a mouse or trackpad, and enough memory to render and encode video. On a phone or small tablet some features won’t work well.</p>
+    <p class="dim">Open this page on a laptop or desktop browser for the full experience.</p>
+    <button class="line-btn" id="desktop-continue" type="button">Continue anyway</button>
   </div>
+</div>
 
-  <div id="transport">
-    <button id="btn-play" class="play">Play</button>
-    <span class="time" id="time-label">0.00 / 18.00s</span>
-    <input type="range" id="scrub" min="0" max="18" step="0.01" value="0">
-    <span class="dim" id="fit-label"></span>
-  </div>
-</main>
+<input type="file" id="replace-input" accept="video/*,image/*" hidden>
 
-<script src="app.js"></script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
