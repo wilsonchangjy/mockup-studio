@@ -139,8 +139,7 @@ export function createViewport(host, hooks = {}) {
 
   function applyGround() {
     const g = state.scene.ground;
-    ground.visible = g.mode === 'solid';
-    contact.plane.visible = g.mode !== 'none';
+    ground.visible = g.mode === 'solid';   // the contact shadow decides its own, each frame (updateContact)
     solidFloor.color.set(g.color);
     requestRender();
   }
@@ -192,11 +191,17 @@ export function createViewport(host, hooks = {}) {
      12cm of blur), so a setting looks the same for a lone phone and a desk. */
   const _box = new THREE.Box3(), _size = new THREE.Vector3(), _ctr = new THREE.Vector3();
   function updateContact() {
-    if (!contact.plane.visible) return;
+    /* Decided afresh every frame: shown when the ground has shadows and
+       there's something to cast them. (Hiding it for an empty frame and
+       leaving it to applyGround to bring back lost the shadows whenever a
+       frame was drawn before the first model arrived.) */
+    contact.plane.visible = false;
+    if (state.scene.ground.mode === 'none') return;
     scene.updateMatrixWorld(true);
     _box.makeEmpty();
     for (const r of runtime.values()) _box.expandByObject(r.root);
-    if (_box.isEmpty()) { contact.plane.visible = false; return; }
+    if (_box.isEmpty()) return;
+    contact.plane.visible = true;
     _box.getSize(_size);
     _box.getCenter(_ctr);
     const g = state.scene.ground;
