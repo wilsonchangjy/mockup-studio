@@ -14,21 +14,43 @@ import { resolveMood } from './lighting.js';
 import { createUI, toast } from './ui.js';
 import { state, commit, subscribe, device as deviceById, asset as assetById, loadPrefs, savedScene, mergeScene } from './state.js';
 import { MODELS, resolveModel, finishesFor, defaultColorFor, formOf, foldable, screenAspectOf } from './devices.js';
-import { importFiles as importMedia, removeAsset as dropAsset } from './media.js';
+import { importFiles as importMedia, removeAsset as dropAsset, setPlaceholderStyle } from './media.js';
 import { TEMPLATES, quickstart, newDevice } from './compose.js';
+import { createQuick } from './quick.js';
 
 loadPrefs();
 
-let ui = null;
+/* Quick mode, the phone layout (src/quick.js): touch-only devices with a
+   short side under 768px. Touch tablets get it too, unless the full editor
+   was chosen from its Start screen. `?quick=1` / `?quick=0` force either. */
+function wantsQuick() {
+  const forced = new URLSearchParams(location.search).get('quick');
+  if (forced === '1') return true;
+  if (forced === '0') return false;
+  const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+  if (!touchOnly) return false;
+  return Math.min(screen.width, screen.height) < 768 || state.prefs.editor !== 'full';
+}
+const QUICK = wantsQuick();
+const TABLET = QUICK && Math.min(screen.width, screen.height) >= 768;
+
+let ui = null, quick = null;
 const host = document.getElementById('viewport-host');
-const vp = createViewport(host, {
+const vp = createViewport(host, QUICK ? {
+  onTap: (hit) => quick?.onTap(hit),
+  onRender: () => quick?.onRender(),
+  onFrame: (rect) => quick?.onFrame(rect),
+  onSeek: (t) => app.seek(t),
+  onPause: () => app.pause(),
+  onModelError: (label) => toast(`Couldn't load the ${label} model. Check your connection and try again.`, 'err'),
+} : {
   onSelect: (id) => app.select(id),
   onHover: (id, anchor, slot) => ui?.showChip(id, anchor, 'hover', slot),
   onRender: () => ui?.renderOverlay(),
   onSeek: (t) => app.seek(t),
   onPause: () => app.pause(),
   onModelError: (label) => toast(`Couldn't load the ${label} model. Check your connection and add it again.`, 'err'),
-});
+}, { quick: QUICK });
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -66,6 +88,10 @@ function settle(ids) {
 
 const app = {
   vp,
+  quick: QUICK,
+  tablet: TABLET,
+  /** Quick mode adjusts every scene it's handed (output caps, its shape). */
+  adapt: null,
 
   /* ------------------------------ selection ----------------------------- */
   select(id) {
@@ -94,7 +120,9 @@ const app = {
   togglePlay() { state.playing ? app.pause() : app.play(); },
 
   /* ------------------------------ composition --------------------------- */
-  applyComposition({ devices, scene, cameraDir, fill }) {
+  applyComposition(comp) {
+    app.adapt?.(comp);
+    const { devices, scene, cameraDir, fill } = comp;
     app.pause();
     state.devices = devices;
     state.scene = scene;
@@ -114,15 +142,21 @@ const app = {
     commit('time');
   },
 
-  useTemplate(id) {
+  useTemplate(id, { quiet = false } = {}) {
     const tpl = TEMPLATES.find((t) => t.id === id);
-    if (!tpl) return;
+    if (!tpl) return null;
     const comp = tpl.build();
-    // hand any already-uploaded media to the template's screens, in order
-    const vids = state.assets.slice();
+    comp.scene.template = tpl.id;
+    /* Hand media to the template's screens, in order: on desktop everything
+       uploaded; in Quick mode what's on the screens now, since there's no
+       library to fall back on. */
+    const vids = QUICK
+      ? state.devices.map((d) => d.media && assetById(d.media)).filter(Boolean)
+      : state.assets.slice();
     comp.devices.forEach((d, i) => { if (vids[i]) app.autoOrient(d, vids[i]); if (vids[i]) d.media = vids[i].id; });
     app.applyComposition(comp);
-    toast(comp.devices.length ? `${tpl.name} — drop footage onto any screen to fill it.` : 'Blank scene — add a device from the Scene panel.');
+    if (!quiet) toast(comp.devices.length ? `${tpl.name} — drop footage onto any screen to fill it.` : 'Blank scene — add a device from the Scene panel.');
+    return tpl;
   },
 
   async quickstartFromFiles(files) {
@@ -137,7 +171,7 @@ const app = {
     return true;
   },
 
-  restoreLast() {
+  restoreLast({ quiet = false } = {}) {
     const saved = savedScene();
     if (!saved) return;
     app.pause();
@@ -154,12 +188,13 @@ const app = {
         return d2;
       })
       .filter(Boolean);
+    app.adapt?.({ scene: state.scene, devices: state.devices });
     state.selection = null;
     state.time = 0;
     vp.syncAll();
     vp.applySceneSettings();
     commit('devices'); commit('scene'); commit('selection');
-    toast('Scene restored. Media isn’t kept between visits — drop your footage back in.');
+    if (!quiet) toast('Scene restored. Media isn’t kept between visits — drop your footage back in.');
   },
 
   /* -------------------------------- devices ----------------------------- */
@@ -218,7 +253,7 @@ const app = {
     const wasFloating = d.float?.enabled;
     if (d.float) d.float.enabled = false;
     commit(`device:${id}`);
-    if (wasFloating) { ui.renderInspector(); toast('Float turned off so it stays on the ground.'); }
+    if (wasFloating) { ui?.renderInspector(); toast('Float turned off so it stays on the ground.'); }
   },
 
   /* --------------------------------- media ------------------------------ */
@@ -227,7 +262,10 @@ const app = {
     for (const e of res.errors) toast(e, 'err');
     if (res.reused.length) {
       const names = res.reused.map((a) => `“${a.name}”`).join(', ');
-      toast(`${names} ${res.reused.length > 1 ? 'are' : 'is'} already in Assets — using ${res.reused.length > 1 ? 'those' : 'that'} instead of adding ${res.reused.length > 1 ? 'copies' : 'a copy'}.`);
+      const many = res.reused.length > 1;
+      toast(QUICK   // no Assets panel on phones
+        ? `${names} ${many ? 'were' : 'was'} added before — using ${many ? 'those' : 'that'} again.`
+        : `${names} ${many ? 'are' : 'is'} already in Assets — using ${many ? 'those' : 'that'} instead of adding ${many ? 'copies' : 'a copy'}.`);
     }
     return res;
   },
@@ -237,6 +275,7 @@ const app = {
   /** A handheld turns sideways when its footage's shape differs from its
       screen's (most screens are taller than wide; an open Fold8's isn't). */
   autoOrient(d, a) {
+    if (QUICK) return;   // Quick mode keeps every template's layout: footage is cropped to fit instead
     const fam = MODELS[d.model].family;
     if ((fam === 'phone' || fam === 'tablet') && a) d.landscape = (a.width > a.height) !== (screenAspectOf(d.model, d.folded) > 1);
   },
@@ -330,26 +369,48 @@ subscribe((tag) => {
 /* --------------------------------- boot -------------------------------- */
 
 vp.applySceneSettings();
-ui = createUI(app);
 
-/* Phones and small tablets get a notice first: the editor needs a large
-   screen, a precise pointer, and the memory to render and encode video.
-   It's a notice, not a block — "Continue anyway" proceeds. */
-const smallOrTouchOnly =
-  matchMedia('(max-width: 899px)').matches ||
-  (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches);
-let dismissed = false;
-try { dismissed = sessionStorage.getItem('mockup-studio.desktop-ok') === '1'; } catch {}
-if (smallOrTouchOnly && !dismissed) {
-  const notice = document.getElementById('desktop-only');
-  notice.hidden = false;
-  document.getElementById('desktop-continue').addEventListener('click', () => {
-    try { sessionStorage.setItem('mockup-studio.desktop-ok', '1'); } catch {}
-    notice.hidden = true;
-    ui.openStart(!!savedScene());
-  });
+if (QUICK) {
+  setPlaceholderStyle('add');
+  quick = createQuick(app);
 } else {
-  ui.openStart(!!savedScene());
+  ui = createUI(app);
+  bootDesktop();
+}
+
+/* Small windows get a notice first: the full editor needs a large screen, a
+   precise pointer, and the memory to render and encode video. It's a notice,
+   not a block — "Continue anyway" proceeds. (Phones get Quick mode instead;
+   a touch tablet that chose the full editor has seen what it's choosing.) */
+function bootDesktop() {
+  const smallOrTouchOnly = state.prefs.editor !== 'full' && (
+    matchMedia('(max-width: 899px)').matches ||
+    (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches));
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem('mockup-studio.desktop-ok') === '1'; } catch {}
+  if (smallOrTouchOnly && !dismissed) {
+    const notice = document.getElementById('desktop-only');
+    notice.hidden = false;
+    document.getElementById('desktop-continue').addEventListener('click', () => {
+      try { sessionStorage.setItem('mockup-studio.desktop-ok', '1'); } catch {}
+      notice.hidden = true;
+      ui.openStart(!!savedScene());
+    });
+  } else {
+    ui.openStart(!!savedScene());
+  }
+  // a touch tablet that chose the full editor can go back
+  if (state.prefs.editor === 'full' && matchMedia('(pointer: coarse)').matches) {
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'text-btn';
+    back.textContent = 'Quick mode';
+    back.addEventListener('click', () => { state.prefs.editor = 'quick'; commit('prefs'); setTimeout(() => location.reload(), 350); });
+    const about = document.getElementById('open-about');
+    about.style.marginLeft = '16px';
+    back.style.marginLeft = 'auto';
+    about.before(back);
+  }
 }
 
 // handy for debugging and for automated checks

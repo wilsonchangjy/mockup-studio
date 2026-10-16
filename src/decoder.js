@@ -217,6 +217,20 @@ export class SeekSource {
   close() { this.video.removeAttribute('src'); this.video.load(); }
 }
 
+/** Whether an asset can be decoded frame by frame (WebCodecs), rather than
+    through the slower seek fallback that can repeat frames. Reads the file's
+    index, so it's worth caching. */
+export async function decodesExactly(asset) {
+  if (asset.kind !== 'video') return true;
+  const isMp4 = /\.(mp4|m4v|mov)$/i.test(asset.name) || /mp4|quicktime/.test(asset.file?.type || '');
+  if (!isMp4 || !('VideoDecoder' in window)) return false;
+  try {
+    const { track, trak } = await demux(asset.file);
+    const config = { codec: track.codec.startsWith('vp08') ? 'vp8' : track.codec, codedWidth: track.video.width, codedHeight: track.video.height, description: codecDescription(trak) };
+    return !!(await VideoDecoder.isConfigSupported(config)).supported;
+  } catch { return false; }
+}
+
 /** Best available exact source for an asset. */
 export async function openSource(asset) {
   const isMp4 = /\.(mp4|m4v|mov)$/i.test(asset.name) || /mp4|quicktime/.test(asset.file?.type || '');

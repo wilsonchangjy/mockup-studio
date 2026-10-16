@@ -33,7 +33,10 @@ const smooth = (u) => u * u * (3 - 2 * u);
 
 const SHADOW_MAP = 2048;
 
-export function createViewport(host, hooks = {}) {
+/** `quick`: Quick mode, the touch layout. The render fills the stage and the
+    export frame is a rectangle inside it (see resize), taps replace clicks,
+    and nothing hovers. */
+export function createViewport(host, hooks = {}, { quick = false } = {}) {
   /* ---------------------------- renderer ---------------------------- */
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -116,6 +119,9 @@ export function createViewport(host, hooks = {}) {
   let hovered = null, hoveredSlot = null;
   const requestRender = () => { dirty = true; };
 
+  // glossy screens mirror the environment closely, so they get the 2K panorama; phones keep to 1K
+  const envSize = () => (!quick && state.scene.light.screen === 'glossy' ? '2k' : '1k');
+
   /* ---------------------------- background --------------------------- */
   let bgTex = null;
   function applyBackground() {
@@ -149,7 +155,7 @@ export function createViewport(host, hooks = {}) {
     const id = resolveMood(l.mood) || 'studio';
     const mood = MOODS[id];
     // glossy screens mirror the environment closely: they get the 2K panorama
-    const env = environments.get(id, l.screen === 'glossy' ? '2k' : '1k');
+    const env = environments.get(id, envSize());
     scene.environment = env.texture;
     // the environment's main light follows the Direction slider, where the key light is
     scene.environmentRotation.y = deg(l.angle - env.azimuth);
@@ -289,7 +295,7 @@ export function createViewport(host, hooks = {}) {
       environment has loaded. Exports and framing wait for this. */
   async function modelsReady() {
     const mood = resolveMood(state.scene.light.mood) || 'studio';
-    const size = state.scene.light.screen === 'glossy' ? '2k' : '1k';
+    const size = envSize();
     const env = environments.ready(mood, size).then(() => applyLight());
     const forms = [...new Map(state.devices.map((d) => [`${d.model}:${!!d.folded}`, [d.model, !!d.folded]])).values()];
     forms.forEach(([m, f]) => requestModel(m, f));
@@ -651,13 +657,27 @@ export function createViewport(host, hooks = {}) {
   canvas.addEventListener('pointerup', () => { if (!dragging()) turn.enabled = true; });
 
   let down = null;
+  // Quick mode: a tap is one finger, moving under 8px, lifted within 300ms
+  const touching = new Set();
+  let multi = false;
   canvas.addEventListener('pointerdown', (e) => {
-    down = onHandle() ? null : { x: e.clientX, y: e.clientY };   // a press on a handle isn't a click
+    touching.add(e.pointerId);
+    if (touching.size > 1) multi = true;
+    down = onHandle() ? null : { x: e.clientX, y: e.clientY, t: performance.now() };   // a press on a handle isn't a click
   });
+  canvas.addEventListener('pointercancel', (e) => { touching.delete(e.pointerId); down = null; });
   canvas.addEventListener('pointerup', (e) => {
+    touching.delete(e.pointerId);
+    const wasMulti = multi;
+    if (!touching.size) multi = false;
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    const held = performance.now() - down.t;
     down = null;
+    if (quick) {
+      if (!wasMulti && moved < 8 && held < 300) hooks.onTap?.(pick(e.clientX, e.clientY));
+      return;
+    }
     if (moved > 4 || dragging()) return;
     const hit = pick(e.clientX, e.clientY);
     hooks.onSelect?.(hit ? hit.id : null);
@@ -665,6 +685,7 @@ export function createViewport(host, hooks = {}) {
   });
   // registered after both gizmos, so it runs after they've updated their hover state
   canvas.addEventListener('pointermove', (e) => {
+    if (quick) return;   // nothing hovers on touch
     if (!dragging()) {
       // where arrows and rings overlap, the arrows win
       turn.enabled = move.axis === null;
@@ -688,10 +709,38 @@ export function createViewport(host, hooks = {}) {
   }
 
   /* ------------------------------ sizing ----------------------------- */
+  /* Quick mode: the render fills the stage, and the export frame — the
+     largest output-shaped rectangle inside the stage less `frameInsets` — is
+     a window onto it. The camera's view offset makes the frame exactly what
+     exports, and the rest of the stage the view around it. */
+  let frameInsets = { top: 16, right: 16, bottom: 72, left: 16 };
+  let frameRect = null;
+  function setFrameInsets(ins) {
+    frameInsets = { ...frameInsets, ...ins };
+    resize();
+  }
+  function resizeQuick(aspect) {
+    const W = Math.max(50, host.clientWidth), H = Math.max(50, host.clientHeight);
+    const { top, right, bottom, left } = frameInsets;
+    const aw = Math.max(20, W - left - right), ah = Math.max(20, H - top - bottom);
+    let fw = aw, fh = aw / aspect;
+    if (fh > ah) { fh = ah; fw = ah * aspect; }
+    frameRect = { x: left + (aw - fw) / 2, y: top + (ah - fh) / 2, w: fw, h: fh };
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(W, H);
+    Object.assign(canvas.style, { left: '0px', top: '0px' });
+    camera.aspect = aspect;
+    setLens();
+    camera.setViewOffset(fw, fh, -frameRect.x, -frameRect.y, W, H);
+    camera.updateProjectionMatrix();
+    hooks.onFrame?.(frameRect);
+    requestRender();
+  }
   function resize() {
     if (exporting) return;
     const o = output();
     const aspect = o.w / o.h;
+    if (quick) return resizeQuick(aspect);
     // room above the frame for the labels drawn over it
     const padX = 28, padY = 40;
     const W = Math.max(50, host.clientWidth - padX * 2);
@@ -750,6 +799,12 @@ export function createViewport(host, hooks = {}) {
       renders at a multiple of the output size; the exporter scales it down. */
   function beginExport({ width, height, transparent, supersample = 1 }) {
     exporting = true;
+    if (quick) {
+      // render exactly the frame, and show it where the frame is while it does
+      camera.clearViewOffset();
+      camera.updateProjectionMatrix();
+      if (frameRect) Object.assign(canvas.style, { left: `${frameRect.x}px`, top: `${frameRect.y}px`, width: `${frameRect.w}px`, height: `${frameRect.h}px` });
+    }
     saved = {
       pr: renderer.getPixelRatio(),
       size: renderer.getSize(new THREE.Vector2()),
@@ -802,6 +857,7 @@ export function createViewport(host, hooks = {}) {
     syncDevice, syncAll, setSelection, applySceneSettings,
     applyBackground, applyGround, applyLight, resize,
     applyTime, seek, setPlaying, frame, pick, screenAnchor, deviceRect, screenRect, canvasRect, fitShadow,
+    setFrameInsets, get frameRect() { return frameRect; },
     beginExport, endExport, maxRenderSize, requestRender, renderNow, renderScene, modelsReady,
     get gizmoDragging() { return dragging(); },
   };

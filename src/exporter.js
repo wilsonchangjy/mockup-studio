@@ -42,10 +42,10 @@ export function bitrateForQuality(q, w, h, fps) {
 /* Supersampling: render at up to 2× the output and scale down, which smooths
    edges well beyond what MSAA alone manages. Capped at a 4K-sized render
    (~8.3 MP) so memory stays sane — a 4K export therefore isn't supersampled. */
-function supersampleFor(vp, w, h) {
+function supersampleFor(vp, w, h, max = 2) {
   const byPixels = Math.sqrt(8.4e6 / (w * h));
   const byGpu = vp.maxRenderSize() / Math.max(w, h);
-  const ss = Math.min(2, byPixels, byGpu);
+  const ss = Math.min(max, byPixels, byGpu);
   return ss >= 1.25 ? ss : 1;
 }
 
@@ -145,12 +145,15 @@ function closeScreens(screens) {
 
 /* ------------------------------- image ------------------------------- */
 
-export async function exportImage(vp, { format = 'png', transparent = false, scale = 1 } = {}) {
+/* Options shared by both exports: `supersample`, the most to supersample by
+   (1 turns it off, as phones do to save memory); `name`, the file's name
+   without its extension. */
+export async function exportImage(vp, { format = 'png', transparent = false, scale = 1, supersample = 2, name } = {}) {
   const o = output();
   const cap = 8192;
   const k = Math.min(scale, cap / Math.max(o.w, o.h));
   const width = Math.round(o.w * k), height = Math.round(o.h * k);
-  const ss = supersampleFor(vp, width, height);
+  const ss = supersampleFor(vp, width, height, supersample);
   await vp.modelsReady();
   const screens = await openScreens(vp);
   vp.beginExport({ width, height, transparent: transparent && format === 'png', supersample: ss });
@@ -163,7 +166,7 @@ export async function exportImage(vp, { format = 'png', transparent = false, sca
     const blob = await new Promise((res) =>
       target.toBlob(res, format === 'jpg' ? 'image/jpeg' : 'image/png', 0.95));
     if (!blob) throw new Error('The browser could not encode the image.');
-    return { blob, name: `mockup-${stamp()}.${format}`, width, height, supersample: ss };
+    return { blob, name: `${name || `mockup-${stamp()}`}.${format}`, width, height, supersample: ss };
   } finally {
     closeScreens(screens);
     vp.endExport();
@@ -224,7 +227,7 @@ async function pickConfig(width, height, fps, bitrate) {
  * Resolves to { blob, name, exact } — `exact` is false if any clip had to use
  * the seek fallback instead of frame-exact decoding.
  */
-export async function exportVideo(vp, { bitrate, onProgress, signal } = {}) {
+export async function exportVideo(vp, { bitrate, onProgress, signal, supersample = 2, name } = {}) {
   if (!canExportVideo()) throw new Error('Video export needs WebCodecs, which this browser doesn’t support.');
   const o = output();
   const width = o.w & ~1, height = o.h & ~1;      // H.264 needs even dimensions
@@ -232,7 +235,7 @@ export async function exportVideo(vp, { bitrate, onProgress, signal } = {}) {
   const total = Math.max(1, Math.round(state.scene.duration * fps));
   const bps = Math.round(bitrate || recommendedBitrate(width, height, fps) * 1e6);
   const cfg = await pickConfig(width, height, fps, bps);
-  const ss = supersampleFor(vp, width, height);
+  const ss = supersampleFor(vp, width, height, supersample);
   await vp.modelsReady();
 
   const target = new ArrayBufferTarget();
@@ -261,8 +264,8 @@ export async function exportVideo(vp, { bitrate, onProgress, signal } = {}) {
       const frame = new VideoFrame(down ? down.capture() : vp.renderer.domElement, {
         timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps),
       });
-      encoder.encode(frame, { keyFrame: i % (fps * 2) === 0 });
-      frame.close();
+      try { encoder.encode(frame, { keyFrame: i % (fps * 2) === 0 }); }
+      finally { frame.close(); }   // even when encoding fails (out of memory), or frames pile up
 
       while (encoder.encodeQueueSize > 6) await new Promise((r) => setTimeout(r, 2));
       if (i % 2 === 0) await new Promise((r) => setTimeout(r, 0));   // keep the UI responsive
@@ -275,7 +278,7 @@ export async function exportVideo(vp, { bitrate, onProgress, signal } = {}) {
     muxer.finalize();
     return {
       blob: new Blob([target.buffer], { type: 'video/mp4' }),
-      name: `mockup-${stamp()}.mp4`,
+      name: `${name || `mockup-${stamp()}`}.mp4`,
       exact: screens.every((s) => !s.source || s.exact),
       seconds: (performance.now() - started) / 1000,
       supersample: ss,

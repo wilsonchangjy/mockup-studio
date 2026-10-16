@@ -2,14 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mockup Studio</title>
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="description" content="Compose 3D device mockups from your screen recordings and export them as video or images, entirely in your browser.">
 <script>
-  /* apply the saved theme before first paint, so there's no light/dark flash */
+  /* apply the saved theme before first paint, so there's no light/dark flash —
+     except in Quick mode (phones, touch tablets; see wantsQuick in src/main.js),
+     which follows the system */
   try {
-    const t = JSON.parse(localStorage.getItem('mockup-studio.v2.prefs') || '{}').theme;
-    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    const prefs = JSON.parse(localStorage.getItem('mockup-studio.v2.prefs') || '{}');
+    const forced = new URLSearchParams(location.search).get('quick');
+    const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+    const quick = forced === '1' || (forced !== '0' && touchOnly && (Math.min(screen.width, screen.height) < 768 || prefs.editor !== 'full'));
+    if (!quick && (prefs.theme === 'light' || prefs.theme === 'dark')) document.documentElement.dataset.theme = prefs.theme;
   } catch {}
 </script>
 </head>

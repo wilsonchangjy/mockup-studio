@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .bg { fill: #F4F4EF; } .mk { stroke: #1A1A18; }
+    @media (prefers-color-scheme: dark) { .bg { fill: #141413; } .mk { stroke: #ECECE4; } }
+  </style>
+  <rect class="bg" width="32" height="32" rx="6"/>
+  <g class="mk" fill="none" stroke-width="2"><path d="M6 9h6M9 6v6M20 9h6M23 6v6M6 23h6M9 20v6M20 23h6M23 20v6"/></g>
+</svg>

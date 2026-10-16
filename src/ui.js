@@ -44,7 +44,11 @@ const fmtDur = (s) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
 const fill = (r) => r.style.setProperty('--p', `${((r.value - r.min) / (r.max - r.min)) * 100}%`);
 
 let toastTimer = null;
+let toastImpl = null;
+/** Quick mode shows its own toasts; the app's actions call toast() either way. */
+export function setToast(fn) { toastImpl = fn; }
 export function toast(msg, kind = '') {
+  if (toastImpl) return toastImpl(msg, kind);
   const t = $('#toast');
   t.textContent = msg;
   t.className = 'toast' + (kind ? ` ${kind}` : '');
@@ -1395,7 +1399,7 @@ export function createUI(app) {
 
 /* =========================== static content =========================== */
 
-function aboutHTML() {
+export function aboutHTML() {
   const libs = [
     ['three.js', 'https://threejs.org', 'MIT'],
     ['mp4box.js', 'https://github.com/gpac/mp4box.js', 'BSD-3-Clause'],

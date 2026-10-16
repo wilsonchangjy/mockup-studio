@@ -1,0 +1,349 @@
+/* =====================================================================
+   Quick mode (src/quick.js): the phone layout, boards M00–M13.
+
+   Colours are the editor's tokens (styles.css), so dark mode needs nothing
+   here but the veil. The render fills the screen behind everything; the
+   header, bar and sheet sit over it, and the export frame is placed inside
+   what's left (viewport.js, setFrameInsets).
+   ===================================================================== */
+
+html.quick { --q-veil: rgba(244, 244, 239, .6); }
+@media (prefers-color-scheme: dark) { html.quick:not([data-theme="light"]) { --q-veil: rgba(20, 20, 19, .55); } }
+html.quick[data-theme="dark"] { --q-veil: rgba(20, 20, 19, .55); }
+
+html.quick, html.quick body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.quick #app, html.quick #desktop-only { display: none !important; }
+html.quick #viewport-host {
+  position: fixed; inset: 0; z-index: 0; display: block; background: var(--bg); background-image: none;
+}
+html.quick #viewport-host canvas.gl { position: absolute; left: 0; top: 0; outline: none; visibility: visible; }
+html.quick .stage-note { top: calc(66px + env(safe-area-inset-top)); left: 16px; bottom: auto; }
+
+.q { position: fixed; inset: 0; color: var(--ink); -webkit-tap-highlight-color: transparent; }
+.q button { color: inherit; }
+.q .mono { font-family: var(--mono); }
+
+/* ------------------------------ header ------------------------------- */
+.q-head {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 3;
+  height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 6px 0 16px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg); border-bottom: 1px solid var(--ink); transition: transform .25s ease;
+}
+.q-word { font-size: 22px; line-height: .86; letter-spacing: -0.05em; font-weight: 500; }
+.q-word > span { display: block; font-family: var(--dotted); font-weight: 700; letter-spacing: -0.02em; }
+.q-readout { margin-left: auto; font-size: 11px; color: var(--dim); white-space: nowrap; }
+.q-hide {
+  height: 44px; padding: 0 10px; background: none; border: 1px solid transparent;
+  display: inline-flex; align-items: center; gap: 8px; font-size: 14px;
+}
+.q-hide:disabled { color: var(--dim); }
+
+/* ------------------------------ stage -------------------------------- */
+/* the export frame: "+" at its corners, everything outside veiled */
+.q-frame { position: absolute; z-index: 1; pointer-events: none; box-shadow: 0 0 0 4000px var(--q-veil); }
+.q-frame span {
+  position: absolute; width: 14px; height: 14px; font: 14px/14px var(--mono); text-align: center; color: var(--ink);
+}
+.q-frame .tl { left: -7px; top: -7px; } .q-frame .tr { right: -7px; top: -7px; }
+.q-frame .bl { left: -7px; bottom: -7px; } .q-frame .br { right: -7px; bottom: -7px; }
+/* the selected screen: the one use of the accent on the stage */
+.q-sel { position: absolute; z-index: 1; pointer-events: none; border: 1.5px solid var(--acc); border-radius: 12px; }
+.q-sel-badge { position: absolute; z-index: 1; pointer-events: none; }
+.q-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.q-stagebox { position: fixed; z-index: 2; pointer-events: none; }
+.q-chips {
+  position: absolute; left: 16px; right: 16px; bottom: 14px;
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+}
+.q-chip {
+  height: 44px; min-width: 44px; padding: 0 14px; pointer-events: auto;
+  background: var(--bg); border: 1px solid var(--ink); border-radius: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; color: var(--ink);
+}
+.q-chip:disabled { color: var(--dim); border-color: var(--rule); }
+.q-reframe { margin-left: auto; }
+.q-hint { font-size: 13px; padding: 0 12px; border-color: var(--rule); pointer-events: none; }
+.q-play { padding: 0; gap: 0; }
+.q-play button {
+  width: 44px; height: 42px; border: 0; background: var(--ink); color: var(--bg) !important;
+  display: flex; align-items: center; justify-content: center;
+}
+.q-play .mono { font-size: 12px; padding: 0 12px; font-variant-numeric: tabular-nums; }
+.sheet-open .q-chips { bottom: 10px; }
+.ui-hidden .q-chips { bottom: calc(16px + env(safe-area-inset-bottom)); }
+.q-tapnote {
+  position: absolute; top: calc(20px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  font-size: 13px; padding: 7px 12px; background: var(--bg); border: 1px solid var(--rule); white-space: nowrap;
+  transition: opacity .5s ease;
+}
+.q-tapnote.gone { opacity: 0; }
+
+.q-toast {
+  position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 2; pointer-events: auto;
+  min-height: 48px; padding: 6px 6px 6px 14px; background: var(--ink); color: var(--bg);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; line-height: 1.35;
+}
+.q-toast.err { background: var(--danger); }
+.q-toast .q-tbtn { color: var(--bg) !important; padding: 0 10px; flex: none; }
+
+/* ------------------------------ bar ---------------------------------- */
+.q-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+  height: calc(60px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--bg); border-top: 1px solid var(--ink); transition: transform .25s ease;
+}
+.q-bar button {
+  background: none; border: 0; border-top: 3px solid transparent; border-radius: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font-size: 14px; color: var(--dim) !important;
+}
+.q-bar button .mono { font-size: 10px; letter-spacing: .04em; }
+.q-bar .on { color: var(--ink) !important; border-top-color: var(--ink); font-weight: 500; }
+.q-bar .go { background: var(--ink); color: var(--bg) !important; }
+.q-bar .go .mono { opacity: .7; }
+.q-bar .go.on { border-top-color: var(--ink); }
+.q-bar button:disabled { opacity: .45; }
+.q-bar .q-rail-hide { display: none; }
+.ui-hidden .q-head { transform: translateY(-100%); }
+.ui-hidden .q-bar { transform: translateY(100%); }
+
+/* ------------------------------ sheets ------------------------------- */
+.q-sheet {
+  position: fixed; left: 0; right: 0; bottom: var(--q-bar-h, 76px); z-index: 3;
+  height: 282px; padding: 0 16px 14px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-x;
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg); border-top: 1px solid var(--ink);
+  scrollbar-width: none;   /* the sheets are sized to fit; a phone narrower than 390px scrolls a little */
+}
+.q-sheet::-webkit-scrollbar { display: none; }
+.q-sheet-exporting { padding-top: 20px; gap: 12px; }
+.q-sheet-template, .q-sheet-ready { gap: 12px; padding-bottom: 8px; }
+.q-sheet-screen { gap: 10px; }
+.q-sheet-look { gap: 8px; padding-bottom: 12px; }
+.q-grab { flex: none; width: 36px; height: 3px; margin: 8px auto 0; background: var(--line); }
+.q-shd { display: flex; align-items: center; gap: 10px; margin: -4px 0 -6px; }
+.q-shd h2 { margin: 0; font-size: 20px; letter-spacing: -0.03em; font-weight: 500; }
+.q-x {
+  width: 44px; height: 44px; margin: 0 -12px 0 auto; background: none; border: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.q-model { font-size: 11px; }
+.q-took { font-size: 13px; }
+.q-grp { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.q-sh {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 500;
+}
+.q-sh .dim { font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 400; }
+
+/* chips: a row that scrolls sideways off the right edge, fading */
+.q-rowx {
+  display: flex; gap: 8px; overflow-x: auto; margin-right: -16px; padding-right: 16px;
+  scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent);
+}
+.q-rowx::-webkit-scrollbar { display: none; }
+.q-chip-opt {
+  flex: none; height: 44px; padding: 0 14px; min-width: 0;
+  background: var(--card); border: 1px solid var(--line); border-radius: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; white-space: nowrap;
+}
+.q-chip-opt.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); font-weight: 500; }
+.q-chip-opt:disabled { color: var(--dim) !important; background: none; border-style: dashed; box-shadow: none; font-weight: 400; }
+.q-chip-opt i { width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35); }
+.q-chip-opt .r { display: block; border: 1.2px solid currentColor; }
+.q-grid4, .q-grid3, .q-grid2 { display: grid; gap: 8px; }
+.q-grid4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.q-grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.q-grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.q-grid4 .q-chip-opt, .q-grid3 .q-chip-opt, .q-grid2 .q-chip-opt { padding: 0 10px; }
+.q-two { display: grid; grid-template-columns: 2fr 3fr; gap: 16px; }
+
+/* finish swatches (Screen sheet): 30px circles in 44px targets */
+.q-swrow { display: flex; align-items: center; margin-left: -7px; }
+.q-sw {
+  flex: none; width: 44px; height: 44px; padding: 0; background: none; border: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.q-sw i { width: 30px; height: 30px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35); }
+.q-sw.on i { outline: 1.5px solid var(--ink); outline-offset: 3px; }
+.q-swname { font-size: 13px; margin-left: 8px; }
+
+/* template cards */
+.q-cards { gap: 12px; padding: 4px 16px 0 3px; margin-left: -3px; }
+.q-card {
+  flex: none; width: 150px; padding: 0; background: none; border: 0; text-align: left;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.q-card img { display: block; width: 150px; height: 84px; object-fit: cover; border: 1px solid var(--rule); }
+.q-card.on img { border: 1.5px solid var(--acc); outline: 3px solid var(--acc-soft); }
+.q-card .t { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+.q-card .d { margin-top: -3px; font: 10px var(--mono); color: var(--dim); letter-spacing: .03em; }
+
+.q-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
+.q-sheet-template .q-foot { border-top: 1px solid var(--rule); }
+.q-foot-rule { border-top: 1px solid var(--rule); padding-top: 10px; }
+.q-foot .mono { font-size: 12px; }
+
+/* buttons */
+.q-btn {
+  flex: none; width: 100%; height: 48px; border: 0; border-radius: 0; background: var(--ink); color: var(--bg) !important;
+  display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 15px; font-weight: 500;
+}
+.q-btn:disabled { background: var(--rule); color: var(--dim) !important; }
+.q-lbtn { flex: none; height: 44px; padding: 0 14px; background: none; border: 1px solid var(--ink); border-radius: 0; font-size: 14px; }
+.q-sheet-exporting .q-lbtn { width: 100%; height: 48px; font-size: 15px; }
+.q-tbtn {
+  min-height: 44px; padding: 0; background: none; border: 0; text-decoration: underline; text-underline-offset: 2px;
+  font-size: 14px; text-align: left;
+}
+.q-inline { min-height: 0; font-size: 13px; }
+.q-center { align-self: center; margin-top: -6px; flex: none; }
+.push { margin-top: auto; }
+.q-under { margin-top: -2px; font-size: 13px; text-align: center; }
+
+/* notes and errors: only the orientation crop, the 20 s cap and the seek fallback */
+.q-note {
+  flex: none; padding: 10px 12px; background: var(--card); border: 1px solid var(--ink);
+  display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; font-size: 13px; line-height: 1.35;
+}
+.q-note svg { margin-top: 1px; }
+.q-err {
+  flex: none; padding: 12px; background: var(--card); border: 1px solid var(--danger);
+  display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.35;
+}
+.q-err b { font-weight: 500; color: var(--danger); }
+.q-err.q-err-ink { border-color: var(--ink); }
+.q-err.q-err-ink b { color: var(--ink); }
+.q-err .dim { font-size: 13px; }
+
+/* export summary */
+.q-sums { flex: none; border-top: 1px solid var(--rule); }
+.q-sum {
+  width: 100%; height: 34px; padding: 0; background: none; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
+  display: grid; grid-template-columns: 96px minmax(0, 1fr) 14px; align-items: center; text-align: left; font-size: 14px;
+}
+.q-sum > span:first-child { color: var(--dim); }
+
+/* exporting */
+.q-xhead { display: flex; align-items: baseline; justify-content: space-between; }
+.q-xhead h2 { margin: 0; font-size: 20px; letter-spacing: -0.03em; font-weight: 500; }
+.q-pct { font: 700 44px/.8 var(--dotted); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.q-bar2 { flex: none; height: 2px; background: linear-gradient(90deg, var(--ink) var(--p, 0%), var(--line) var(--p, 0%)); }
+.q-counts { display: flex; justify-content: space-between; font-size: 12px; font-variant-numeric: tabular-nums; }
+.q-keep { margin: 6px 0 0; font-size: 14px; line-height: 1.4; }
+
+/* ready, and the screen sheet's recording */
+.q-file {
+  flex: none; padding: 12px; background: var(--card); border: 1px solid var(--ink);
+  display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: center;
+}
+.q-thumb { width: 40px; height: 71px; background: var(--panel) center / cover no-repeat; }
+.q-file-txt { display: flex; flex-direction: column; min-width: 0; }
+.q-file-txt > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-file-txt > span:first-child { font-size: 15px; }
+.q-file-txt .dim { font-size: 13px; }
+.q-media { flex: none; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.q-mthumb { width: 44px; height: 44px; background: var(--panel) center / cover no-repeat; }
+
+/* ------------------------------ landscape (M13) ------------------------ */
+/* no header: the bar becomes a rail on the right, with Hide UI on top, and
+   sheets open as a side panel beside it */
+.q.land .q-head { display: none; }
+.q.land .q-bar {
+  left: auto; top: 0; width: calc(84px + env(safe-area-inset-right)); height: auto;
+  padding: 0 env(safe-area-inset-right) 0 0;
+  grid-template-columns: 1fr; grid-template-rows: 56px repeat(4, minmax(0, 1fr));
+  border-top: 0; border-left: 1px solid var(--ink);
+}
+.q.land .q-bar button { border-top: 0; border-left: 3px solid transparent; }
+.q.land .q-bar .on { border-left-color: var(--ink); }
+.q.land .q-bar .q-rail-hide { display: flex; border-left: 0; border-bottom: 1px solid var(--rule); color: var(--ink) !important; }
+.q.land.ui-hidden .q-bar { transform: translateX(100%); }
+.q.land .q-sheet {
+  left: auto; top: 0; bottom: 0; right: calc(84px + env(safe-area-inset-right));
+  width: 316px; height: auto; padding: 12px 16px; border-top: 0; border-left: 1px solid var(--ink);
+}
+.q.land .q-grab { display: none; }
+.q.land .q-shd { margin: -6px 0 -4px; }
+
+/* ------------------------------ start (M01) ---------------------------- */
+.q-start {
+  position: fixed; inset: 0; z-index: 10; overflow-y: auto; overscroll-behavior: contain;
+  padding: calc(28px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 22px;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.2px); background-size: 22px 22px;
+}
+.q-start-word { font-size: 44px; line-height: .86; letter-spacing: -0.055em; font-weight: 500; }
+.q-start h1 { margin: 0; font-size: 34px; line-height: .95; letter-spacing: -0.045em; font-weight: 500; }
+.q-continue {
+  flex: none; height: 60px; padding: 0 14px; background: var(--card); border: 1px solid var(--ink); border-radius: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; text-align: left;
+}
+.q-cont-t { display: block; font-size: 16px; font-weight: 500; }
+.q-cont-d { display: block; margin-top: 3px; font-size: 11px; }
+.q-tpls { display: flex; flex-direction: column; gap: 4px; }
+.q-best { font-size: 11px; letter-spacing: 0; text-transform: none; font-weight: 400; }
+.q-tpl-list { display: flex; flex-direction: column; margin-top: 6px; border-top: 1px solid var(--rule); }
+.q-tpl {
+  width: 100%; padding: 10px 0; background: none; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
+  display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 14px; align-items: center; text-align: left;
+}
+.q-tpl img { display: block; width: 128px; height: 72px; object-fit: cover; border: 1px solid var(--rule); background: var(--panel); }
+.q-tpl .t { display: block; font-size: 17px; font-weight: 500; letter-spacing: -0.01em; }
+.q-tpl .d { display: block; margin-top: 4px; font: 11px var(--mono); color: var(--dim); letter-spacing: .02em; }
+.q-start-foot { margin-top: auto; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.q-start-foot .q-tbtn { margin-left: auto; text-decoration: none; }
+.q-start-foot .q-full + .q-about { margin-left: 16px; }
+.q-start-foot .q-about { text-decoration: underline; }
+
+/* ------------------------------ About (M14) ---------------------------- */
+/* The shared aboutHTML(), laid out as a full-screen page: it scrolls under
+   a sticky "About" bar, sections stack, and links get 40px rows. */
+html.quick #about-dialog.sheet {
+  inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; box-shadow: none;
+}
+html.quick #about-dialog .plus { display: none; }
+html.quick #about-body {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  scrollbar-width: none;   /* phones overlay their own; the desktop's slim gutter would cut the bar short */
+}
+html.quick #about-body::-webkit-scrollbar { display: none; }
+html.quick #about-body::before {
+  content: 'About'; position: sticky; top: 0; z-index: 1; flex: none;
+  height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 60px 0 16px;
+  display: flex; align-items: center; font-size: 15px; font-weight: 500;
+  background: var(--bg); border-bottom: 1px solid var(--ink);
+}
+/* the dialog's close button, in the bar */
+html.quick .about .sheet-head form { position: fixed; top: calc(6px + env(safe-area-inset-top)); right: 4px; z-index: 2; }
+html.quick .about .close { width: 44px; height: 44px; border: 0; background: none; }
+html.quick .about .sheet-head { display: block; padding: 24px 16px 0; }
+html.quick .about .sheet-head > div { gap: 14px; }
+html.quick .about .sheet-head h2 { font-size: 44px; line-height: .86; letter-spacing: -0.055em; }
+html.quick .about .intro { font-size: 16px; line-height: 1.45; }
+html.quick .about .sheet-head p:not(.intro) { font-size: 14px; line-height: 1.5; color: var(--dim); }
+/* everything in the page's own flow: the parts don't shrink to the screen */
+html.quick #about-body > * { flex: none; min-height: auto; }
+html.quick .about-body { overflow: visible; padding: 24px 16px 0; }
+html.quick .about-body::after { display: none; }
+html.quick .about-sec { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 20px; border-top: 1px solid var(--ink); }
+html.quick .about-sec h3 { padding: 0; }
+html.quick .about-sec p.dim { font-size: 13px; line-height: 1.45; }
+html.quick .about .credits { display: flex; flex-direction: column; gap: 12px; }
+html.quick .about .credits > div { display: flex; flex-direction: column; gap: 6px; }
+html.quick .about .credits p { margin: 0; font-size: 14px; }
+html.quick .about-sec ul { margin: 0; display: flex; flex-direction: column; }
+html.quick .about-sec li {
+  min-height: 40px; display: flex; align-items: center; gap: 8px; font-size: 14px; border-bottom: 1px solid var(--rule);
+}
+html.quick .about-sec li .tag { margin-left: 0; }
+html.quick .about table { font-size: 14px; }
+html.quick .about td { height: 40px; padding: 0; }
+html.quick .about td + td { padding-left: 12px; white-space: nowrap; }
+html.quick .about-foot { margin: 0 16px; padding: 14px 0 0; border-top: 1px solid var(--rule); font-size: 12px; line-height: 1.5; }
+html.quick .about a { overflow-wrap: anywhere; }

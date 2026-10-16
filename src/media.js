@@ -142,11 +142,40 @@ export function sharpen(tex) {
   return tex;
 }
 
+/* What an empty screen shows: 'drop' (desktop: drag footage onto it) or
+   'add' (Quick mode: tap it to add a recording). */
+let placeholderStyle = 'drop';
+export function setPlaceholderStyle(style) { placeholderStyle = style; }
+
+function addPlaceholder(g, W, H) {
+  g.fillStyle = '#121212'; g.fillRect(0, 0, W, H);
+  const s = Math.min(W, H) * 0.3, cx = W / 2, cy = H / 2 - s * 0.25;
+  g.strokeStyle = '#ececE4'; g.lineWidth = Math.max(2, s * 0.03);
+  g.strokeRect(cx - s / 2, cy - s / 2, s, s);
+  g.lineWidth = Math.max(2, s * 0.025);
+  g.beginPath();
+  g.moveTo(cx - s * 0.22, cy); g.lineTo(cx + s * 0.22, cy);
+  g.moveTo(cx, cy - s * 0.22); g.lineTo(cx, cy + s * 0.22);
+  g.stroke();
+  g.fillStyle = '#ececE4';
+  g.font = `500 ${Math.round(s * 0.3)}px 'IBM Plex Mono', ui-monospace, monospace`;
+  g.textAlign = 'center';
+  g.textBaseline = 'top';
+  g.fillText('ADD', cx, cy + s / 2 + s * 0.22);
+}
+
 function placeholderTexture(aspect, landscape, back) {
   const W = 512, H = Math.round(W / (landscape ? 1 / aspect : aspect));
   const c = document.createElement('canvas');
   c.width = W; c.height = Math.max(64, Math.min(H, 1400));
   const g = c.getContext('2d');
+  if (placeholderStyle === 'add') {
+    addPlaceholder(g, c.width, c.height);
+    const t = sharpen(new THREE.CanvasTexture(c));
+    t.colorSpace = THREE.SRGBColorSpace;
+    if (landscape) { t.center.set(0.5, 0.5); t.rotation = turn(back); }
+    return t;
+  }
   const grad = g.createLinearGradient(0, 0, 0, c.height);
   grad.addColorStop(0, '#1c2029'); grad.addColorStop(1, '#0c0e12');
   g.fillStyle = grad; g.fillRect(0, 0, c.width, c.height);

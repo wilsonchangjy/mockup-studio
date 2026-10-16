@@ -160,6 +160,23 @@ Number fields can be typed into, or scrubbed by dragging their axis letter
 or unit (Shift for coarse, Alt for fine). Landscape footage turns a phone or tablet
 sideways automatically.
 
+### On a phone: Quick mode
+
+Phones (and touch tablets, which can switch to the full editor from the
+Start screen) get Quick mode: pick a template, tap a screen to add a
+recording from Photos or Files, then choose a look and a shape and export.
+The template's layout is kept as it is — footage is cropped to each screen
+rather than turning the device. One bar at the bottom opens Template, Look
+(lighting, background, camera motion), Format (9:16, 1:1, 4:5 or 16:9;
+24 or 30 fps; MP4, PNG or JPG) and Export. Drag to orbit, pinch to zoom,
+drag with two fingers to pan; **Reframe** is always on the stage. Tap empty
+stage to hide the controls.
+
+To fit in a phone's memory, exports are 1080p, at most 20 s long, and not
+supersampled. **Save video** opens the share sheet (Save Video puts it in
+Photos on iOS). Add `?quick=1` or `?quick=0` to the address to force either
+layout.
+
 ## How export works
 
 The composition is a pure function of time, so export steps through it one
@@ -189,7 +206,7 @@ that happens.
 ## Browser support
 
 A current Chrome, Edge, Safari or Firefox. Video export needs WebCodecs; image
-export works everywhere WebGL does. The app is designed for desktop screens; phones and small tablets see a notice first, with the option to continue.
+export works everywhere WebGL does. The full editor is designed for desktop screens; phones and touch tablets get Quick mode (above), and small desktop windows see a notice first, with the option to continue.
 
 ## Limitations
 
@@ -205,6 +222,7 @@ index.html        app shell
 src/
   main.js         actions and wiring
   ui.js           panels, inspector, dialogs, drag & drop
+  quick.js, quick.css  Quick mode, the phone layout
   viewport.js     three.js scene, camera, gizmos, picking
   contactShadow.js  soft floor shadows
   devices.js      device library: models, finishes, hinges, screens
