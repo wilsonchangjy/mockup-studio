@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { createViewport } from './viewport.js';
 import { resolveMood } from './lighting.js';
 import { createUI, toast } from './ui.js';
-import { state, commit, subscribe, device as deviceById, asset as assetById, loadPrefs, savedScene, mergeScene, saveThumb } from './state.js';
+import { state, commit, subscribe, device as deviceById, asset as assetById, loadPrefs, savedScene, mergeScene, saveThumb, atDeviceLimit, deviceLimitMsg } from './state.js';
 import { MODELS, resolveModel, finishesFor, defaultColorFor, formOf, foldable, screenAspectOf } from './devices.js';
 import { importFiles as importMedia, removeAsset as dropAsset, setPlaceholderStyle } from './media.js';
 import { TEMPLATES, quickstart, newDevice } from './compose.js';
@@ -203,6 +203,7 @@ const app = {
 
   /* -------------------------------- devices ----------------------------- */
   addDevice(model) {
+    if (atDeviceLimit()) return toast(deviceLimitMsg);
     const d = newDevice(model);
     let x = 0, z = 0;
     if (state.devices.length) {
@@ -224,6 +225,7 @@ const app = {
   duplicate(id) {
     const src = deviceById(id);
     if (!src) return;
+    if (atDeviceLimit()) return toast(deviceLimitMsg);
     const copy = structuredClone(src);
     copy.id = newDevice(src.model).id;
     copy.position = [src.position[0] + halfWidth(src) * 2 + 0.03, src.position[1], src.position[2]];

@@ -14,7 +14,7 @@
    Number fields scrub like 3D software: drag the axis letter or the unit.
    ===================================================================== */
 
-import { state, commit, subscribe, device as deviceById, asset as assetById, OUTPUTS, output, defaultScene, savedScene, savedThumb } from './state.js';
+import { state, commit, subscribe, device as deviceById, asset as assetById, OUTPUTS, output, defaultScene, savedScene, savedThumb, MAX_DEVICES, atDeviceLimit, deviceLimitMsg } from './state.js';
 import { MODELS, FAMILIES, MODEL_CREDITS, LICENCES, modelsInFamily, finishesFor, defaultColorFor, hingeOf, foldOf, foldable, hasCover, screenAspectOf, formOf } from './devices.js';
 import { MOODS, resolveMood } from './lighting.js';
 import { TEMPLATES } from './compose.js';
@@ -262,6 +262,11 @@ export function createUI(app) {
     const n = state.devices.length;
     $('#device-empty').hidden = n > 0;
     $('#device-count').textContent = n;
+    // at the limit the button stays focusable and says why, rather than going dead
+    const full = atDeviceLimit();
+    mainAction.setAttribute('aria-disabled', String(full));
+    mainAction.title = full ? `Up to ${MAX_DEVICES} devices in a scene` : '';
+    if (full) closeMenus();
 
     state.devices.forEach((d, i) => {
       const a = d.media ? assetById(d.media) : null;
@@ -383,6 +388,7 @@ export function createUI(app) {
   headAction.addEventListener('click', (e) => { e.stopPropagation(); openStart(false); });
   mainAction.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (atDeviceLimit()) return toast(deviceLimitMsg);
     if (menu.hidden) openAddMenu(); else closeMenus();
   });
   document.addEventListener('click', (e) => { if (!menu.contains(e.target)) closeMenus(); });
@@ -735,6 +741,7 @@ export function createUI(app) {
 
     const actions = h('div', 'actions');
     const dup = h('button', 'line-btn', 'Duplicate'); dup.type = 'button';
+    if (atDeviceLimit()) { dup.setAttribute('aria-disabled', 'true'); dup.title = `Up to ${MAX_DEVICES} devices in a scene`; }
     dup.addEventListener('click', () => app.duplicate(d.id));
     const del = h('button', 'line-btn danger', 'Delete'); del.type = 'button';
     del.addEventListener('click', () => app.remove(d.id));

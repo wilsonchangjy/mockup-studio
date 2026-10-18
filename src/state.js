@@ -37,6 +37,11 @@ export function defaultScene() {
   };
 }
 
+/** Most devices a scene holds: past this, rendering and video decoding bog down. */
+export const MAX_DEVICES = 8;
+export const atDeviceLimit = () => state.devices.length >= MAX_DEVICES;
+export const deviceLimitMsg = `Scenes hold up to ${MAX_DEVICES} devices. Remove one to add another.`;
+
 export const state = {
   scene: defaultScene(),
   devices: [],          // { id, model, name, position[m], rotation[deg], color, media, trim, rate, float }
