@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mockupstudio.dev/sitemap.xml

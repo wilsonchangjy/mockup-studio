@@ -3,7 +3,7 @@
 Compose 3D device mockups from your screen recordings and export them as video
 or images, entirely in your browser.
 
-![A Studio Display, MacBook Pro, iPad and iPhone composed in Mockup Studio's Ecosystem template](docs/preview.png)
+![The Mockup Studio editor: an open iPhone Duo selected on the stage, with the asset library on the left and its device settings on the right](docs/preview.png)
 
 Built because most mockup tools either produce stills, watermark the output, or
 only allow **one** device per composition.
