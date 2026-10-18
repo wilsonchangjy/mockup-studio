@@ -836,6 +836,34 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
     seek(state.time);
   }
 
+  /* A small JPEG of the scene as it looks now, for the Start dialog's saved
+     scene card. Screens are blanked (a 1×1 black texture keeps their shader
+     as it is) so no frame of anyone's footage outlives the tab, and the
+     move/rotate handles are hidden. One extra render; a few milliseconds. */
+  const blackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  blackTex.needsUpdate = true;
+  function snapshot(width = 480) {
+    if (exporting || !runtime.size) return '';
+    const maps = new Map();
+    for (const r of runtime.values()) for (const m of screensOf(r)) if (!maps.has(m.material)) maps.set(m.material, m.material.emissiveMap);
+    const shown = helpers.map((h) => h.visible);
+    try {
+      for (const mat of maps.keys()) if (mat.emissiveMap) mat.emissiveMap = blackTex;
+      helpers.forEach((h) => { h.visible = false; });
+      renderScene();
+      const c = document.createElement('canvas');
+      c.width = width;
+      c.height = Math.round((width * canvas.height) / canvas.width);
+      c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.82);
+    } catch { return ''; }
+    finally {
+      for (const [mat, map] of maps) mat.emissiveMap = map;
+      helpers.forEach((h, i) => { h.visible = shown[i]; });
+      requestRender();
+    }
+  }
+
   /** Largest drawing-buffer edge this GPU will render. */
   function maxRenderSize() {
     const gl = renderer.getContext();
@@ -858,7 +886,7 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
     applyBackground, applyGround, applyLight, resize,
     applyTime, seek, setPlaying, frame, pick, screenAnchor, deviceRect, screenRect, canvasRect, fitShadow,
     setFrameInsets, get frameRect() { return frameRect; },
-    beginExport, endExport, maxRenderSize, requestRender, renderNow, renderScene, modelsReady,
+    beginExport, endExport, maxRenderSize, snapshot, requestRender, renderNow, renderScene, modelsReady,
     get gizmoDragging() { return dragging(); },
   };
 }

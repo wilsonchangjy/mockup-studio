@@ -45,6 +45,11 @@ export const state = {
   time: 0,
   playing: false,
   exporting: false,
+  /* Whether the scene is worth saving: once footage has been placed on one
+     of its screens, or it's the last scene, restored. A template or a blank
+     scene with nothing on it isn't — saving it would replace the last scene
+     before "Continue last scene" could bring it back. */
+  live: false,
   prefs: { theme: 'system', tab: 'scene', ui: true },
 };
 
@@ -72,7 +77,7 @@ export const output = () => OUTPUTS[state.scene.output] || OUTPUTS['1920x1080'];
 
 function save() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({
+    if (state.live) localStorage.setItem(KEY, JSON.stringify({
       scene: state.scene,
       // media can't survive a reload (memory only), so don't persist a dangling id
       devices: state.devices.map((d) => ({ ...d, media: null, second: d.second && { ...d.second, media: null } })),
@@ -81,6 +86,13 @@ function save() {
     localStorage.setItem(PREFS, JSON.stringify(state.prefs));
   } catch { /* private mode / quota — the app still works, it just won't remember */ }
 }
+
+/* The saved scene's picture (viewport.snapshot), kept beside it. */
+const THUMB = 'mockup-studio.v2.thumb';
+export function saveThumb(dataUrl) {
+  try { if (dataUrl) localStorage.setItem(THUMB, dataUrl); else localStorage.removeItem(THUMB); } catch {}
+}
+export const savedThumb = () => { try { return localStorage.getItem(THUMB) || ''; } catch { return ''; } };
 
 export function savedScene() {
   try {

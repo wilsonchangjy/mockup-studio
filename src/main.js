@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { createViewport } from './viewport.js';
 import { resolveMood } from './lighting.js';
 import { createUI, toast } from './ui.js';
-import { state, commit, subscribe, device as deviceById, asset as assetById, loadPrefs, savedScene, mergeScene } from './state.js';
+import { state, commit, subscribe, device as deviceById, asset as assetById, loadPrefs, savedScene, mergeScene, saveThumb } from './state.js';
 import { MODELS, resolveModel, finishesFor, defaultColorFor, formOf, foldable, screenAspectOf } from './devices.js';
 import { importFiles as importMedia, removeAsset as dropAsset, setPlaceholderStyle } from './media.js';
 import { TEMPLATES, quickstart, newDevice } from './compose.js';
@@ -124,6 +124,8 @@ const app = {
     app.adapt?.(comp);
     const { devices, scene, cameraDir, fill } = comp;
     app.pause();
+    // a new scene is only saved once it has footage (a quickstart, or media handed across, does)
+    state.live = devices.some((d) => d.media || d.second?.media);
     state.devices = devices;
     state.scene = scene;
     state.time = 0;
@@ -189,6 +191,8 @@ const app = {
       })
       .filter(Boolean);
     app.adapt?.({ scene: state.scene, devices: state.devices });
+    state.live = true;
+    thumbFor = thumbKey();   // its picture was saved with it
     state.selection = null;
     state.time = 0;
     vp.syncAll();
@@ -322,6 +326,7 @@ const app = {
     const d = deviceById(deviceId);
     if (!d) return;
     const a = assetId ? assetById(assetId) : null;
+    if (a) state.live = true;   // footage makes the scene worth keeping
     if (slot === 'second') {
       const s = d.second || { trim: 0, rate: 1 };
       d.second = { ...s, media: a ? a.id : null, trim: a?.kind === 'video' && s.trim >= a.duration ? 0 : s.trim };
@@ -356,7 +361,25 @@ const app = {
 
 /* ------------------------------ reactions ------------------------------ */
 
+/* The saved scene's thumbnail for the Start dialog, retaken when its
+   devices or its mood change: a second after the last change, once the
+   models and the mood's lighting have loaded, so quick edits make one
+   picture. Phones (Quick mode) don't show it, so don't take it. */
+let thumbFor = '', thumbTimer = 0;
+const thumbKey = () => `${state.devices.map((d) => d.model).join(',')}|${resolveMood(state.scene.light.mood) || state.scene.light.mood}`;
+function scheduleThumb() {
+  if (QUICK || !state.live || thumbKey() === thumbFor) return;
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(async () => {
+    await vp.modelsReady();
+    if (state.exporting) { scheduleThumb(); return; }
+    thumbFor = thumbKey();
+    saveThumb(state.devices.length ? vp.snapshot() : null);
+  }, 1000);
+}
+
 subscribe((tag) => {
+  if (tag === 'devices' || tag === 'scene') scheduleThumb();
   if (tag === 'devices') vp.syncAll();
   else if (tag === 'selection') vp.setSelection(state.selection);
   else if (tag.startsWith('device:')) vp.syncDevice(tag.slice(7));

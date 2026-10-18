@@ -14,7 +14,7 @@
    Number fields scrub like 3D software: drag the axis letter or the unit.
    ===================================================================== */
 
-import { state, commit, subscribe, device as deviceById, asset as assetById, OUTPUTS, output, defaultScene } from './state.js';
+import { state, commit, subscribe, device as deviceById, asset as assetById, OUTPUTS, output, defaultScene, savedScene, savedThumb } from './state.js';
 import { MODELS, FAMILIES, MODEL_CREDITS, LICENCES, modelsInFamily, finishesFor, defaultColorFor, hingeOf, foldOf, foldable, hasCover, screenAspectOf, formOf } from './devices.js';
 import { MOODS, resolveMood } from './lighting.js';
 import { TEMPLATES } from './compose.js';
@@ -1326,6 +1326,11 @@ export function createUI(app) {
     tg.append(b);
   }
 
+  // the upload column fills what's visible of the dialog's body (styles.css, .upload-card)
+  const startGrid = $('.start-grid');
+  const fitUpload = () => startGrid.style.setProperty('--start-h', `${startGrid.clientHeight}px`);
+  new ResizeObserver(fitUpload).observe(startGrid);
+
   const startDrop = $('#start-drop');
   const startStatus = $('#start-status');
   async function startWithFiles(files) {
@@ -1340,11 +1345,41 @@ export function createUI(app) {
   startDrop.addEventListener('dragleave', () => startDrop.classList.remove('over'));
   startDrop.addEventListener('drop', (e) => { e.preventDefault(); startDrop.classList.remove('over'); startWithFiles([...e.dataTransfer.files]); });
 
-  function openStart(offerContinue) {
-    $('#start-foot').hidden = !offerContinue;
-    start.showModal();
+  /* The last scene, as a card above the templates: its picture (or its
+     template's, if it was saved before pictures were), the day it was
+     saved, and its devices. Offered when the app opens, not mid-session,
+     when the last scene is the one on stage. */
+  function savedCard() {
+    const saved = savedScene();
+    if (!saved) return null;
+    const b = h('button', 'tpl');
+    b.type = 'button';
+    const pic = savedThumb() || (TEMPLATES.some((t) => t.id === saved.scene?.template && t.id !== 'blank') ? `templates/${saved.scene.template}.webp` : '');
+    if (pic) {
+      const img = h('img', 'art');
+      img.src = pic; img.alt = '';
+      b.append(img);
+    } else {
+      b.insertAdjacentHTML('beforeend', '<span class="art blank dots" aria-hidden="true"></span>');
+    }
+    const day = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).formatToParts(new Date(saved.savedAt || Date.now()));
+    const part = (k) => day.find((p) => p.type === k)?.value;
+    // each model once, with a count when there's more than one
+    const counts = new Map();
+    for (const d of saved.devices) { const l = MODELS[d.model]?.label; if (l) counts.set(l, (counts.get(l) || 0) + 1); }
+    const names = [...counts].map(([l, n]) => (n > 1 ? `${l} ×${n}` : l)).join(', ');
+    b.append(h('span', 't', `${part('weekday')}, ${part('day')} ${part('month')}`), h('span', 'd', names));
+    b.setAttribute('aria-label', `Continue the scene saved ${part('weekday')}, ${part('day')} ${part('month')}: ${names}`);
+    b.addEventListener('click', () => { app.restoreLast(); start.close(); });
+    return b;
   }
-  $('#continue-last').addEventListener('click', () => { app.restoreLast(); start.close(); });
+  function openStart(offerContinue) {
+    const card = offerContinue ? savedCard() : null;
+    $('#saved-grid').replaceChildren(...(card ? [card] : []));
+    $('#saved-scenes').hidden = !card;
+    start.showModal();
+    fitUpload();   // straight away, not a frame later
+  }
 
   /* About sits exactly over the stage frame — same box, same corner marks —
      rather than a near-miss size beside it. */
