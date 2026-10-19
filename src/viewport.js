@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { createEnvironments, MOODS, resolveMood } from './lighting.js';
-import { buildDevice, disposeDevice, MODELS, loadModel, modelReady, setScreenGlare } from './devices.js';
+import { buildDevice, disposeDevice, MODELS, formOf, loadModel, modelReady, setScreenGlare } from './devices.js';
 import { ScreenFeed, setMaxAnisotropy } from './media.js';
 import { ContactShadow, SHADOW_LAYER } from './contactShadow.js';
 import { state, commit, device as deviceById, asset as assetById, output } from './state.js';
@@ -261,6 +261,67 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
     });
   }
 
+  /* While a device's model downloads, a pale box of its size stands where it
+     will be, labelled, so the wait reads as loading rather than as nothing
+     happening. Sizes come from the specs (mm), as for layout. */
+  const ghosts = new Map();   // device id → { group, note }
+  const ghostFill = new THREE.MeshBasicMaterial({ color: 0x8a8c90, transparent: true, opacity: 0.14, depthWrite: false });
+  const ghostEdge = new THREE.LineBasicMaterial({ color: 0x8a8c90, transparent: true, opacity: 0.6 });
+  function ghostBoxes(d) {   // [w, h, depth, x, y, z] in mm, in the device's own frame
+    const m = formOf(d.model, !!d.folded);
+    if (m.family === 'laptop') {
+      const { w, d: depth, t } = m.base, lid = depth * 0.95;
+      return [[w, t, depth, 0, t / 2, 0], [w, lid, t * 0.6, 0, t + lid / 2, -depth / 2]];
+    }
+    if (m.family === 'desktop') {
+      const panelH = m.panelW * (m.res[1] / m.res[0]);
+      return [[m.panelW, panelH, 25, 0, m.height - panelH / 2, 0]];
+    }
+    const e = m.extent || m.body, landscape = !!d.landscape && m.family !== 'watch';
+    return [[landscape ? e.h : e.w, landscape ? e.w : e.h, m.body.d, 0, 0, 0]];
+  }
+  function showGhost(d) {
+    if (ghosts.has(d.id) || exporting) return;
+    const group = new THREE.Group();
+    group.rotation.order = 'YXZ';
+    for (const [w, h, depth, x, y, z] of ghostBoxes(d)) {
+      const geo = new THREE.BoxGeometry(w / 1000, h / 1000, depth / 1000);
+      const box = new THREE.Mesh(geo, ghostFill);
+      box.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), ghostEdge));
+      box.position.set(x / 1000, y / 1000, z / 1000);
+      group.add(box);
+    }
+    poseDevice(d, { root: group }, state.time);
+    scene.add(group);
+    const note = document.createElement('div');
+    note.className = 'ghost-note';
+    note.textContent = 'Loading…';
+    host.appendChild(note);
+    ghosts.set(d.id, { group, note });
+    requestRender();
+  }
+  function removeGhost(id) {
+    const g = ghosts.get(id);
+    if (!g) return;
+    g.group.traverse((o) => o.geometry?.dispose());
+    scene.remove(g.group);
+    g.note.remove();
+    ghosts.delete(id);
+    requestRender();
+  }
+  const _gp = new THREE.Vector3();
+  function placeGhostNotes() {
+    for (const [id, g] of ghosts) {
+      const d = deviceById(id);
+      if (d) poseDevice(d, { root: g.group }, state.time);
+      new THREE.Box3().setFromObject(g.group).getCenter(_gp).project(camera);
+      const r = canvasRect();
+      g.note.hidden = _gp.z > 1 || Math.abs(_gp.x) > 1 || Math.abs(_gp.y) > 1;
+      g.note.style.left = `${r.x + ((_gp.x + 1) / 2) * r.w}px`;
+      g.note.style.top = `${r.y + ((1 - _gp.y) / 2) * r.h}px`;
+    }
+  }
+
   /* A device's screens and their feeds: 'main', and an open foldable's
      cover screen, the 'second'. */
   const screensOf = (r) => [...r.built.screenParts, ...r.built.coverParts];
@@ -287,6 +348,15 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
     // an open foldable's cover screen shows the device's second media
     const feed2 = built.cover ? new ScreenFeed(built.cover, built.coverAspect, requestRender, { back: true }) : null;
     const r = { root, orient, built, feed, feed2, model: d.model, folded: !!d.folded };
+    /* Its shaders compile before it's shown, in the background where the
+       browser can (KHR_parallel_shader_compile), instead of stalling the
+       first frame it's in. Its stand-in stays until then. */
+    built.root.visible = false;
+    r.ready = renderer.compileAsync(root, camera, scene).catch(() => {}).then(() => {
+      built.root.visible = true;
+      removeGhost(d.id);
+      requestRender();
+    });
     runtime.set(d.id, r);
     return r;
   }
@@ -301,6 +371,7 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
     forms.forEach(([m, f]) => requestModel(m, f));
     await Promise.all([...forms.map(([m, f]) => loadModel(m, f)), env]);
     for (const d of state.devices) if (!current(d)) syncDevice(d.id);
+    await Promise.all(state.devices.map((d) => runtime.get(d.id)?.ready));
   }
   /** Is the device on stage the one its state describes? */
   function current(d) {
@@ -309,6 +380,7 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
   }
 
   function destroy(id) {
+    removeGhost(id);
     const r = runtime.get(id);
     if (!r) return;
     for (const g of gizmos) if (g.object === r.root) g.detach();
@@ -331,7 +403,7 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
       destroy(id); r = null;
     }
     if (!r) {
-      if (!modelReady(d.model, folded)) { requestModel(d.model, folded); return; }
+      if (!modelReady(d.model, folded)) { requestModel(d.model, folded); showGhost(d); return; }
       r = build(d);
     }
 
@@ -361,7 +433,7 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
 
   function syncAll() {
     const ids = new Set(state.devices.map((d) => d.id));
-    for (const id of [...runtime.keys()]) if (!ids.has(id)) destroy(id);
+    for (const id of [...runtime.keys(), ...ghosts.keys()]) if (!ids.has(id)) destroy(id);
     for (const d of state.devices) syncDevice(d.id);
     setSelection(state.selection);
     fitShadow();
@@ -768,8 +840,19 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
     if (state.playing) {
       state.time = (state.time + dt) % Math.max(0.1, state.scene.duration);
       applyTime(state.time);
-      for (const r of runtime.values()) for (const f of feedsOf(r)) f.sync(state.time, true);
+      /* One paused video starts per frame, so pressing play doesn't start
+         every decoder and upload every first frame at once. */
+      let starting = 0;
+      for (const r of runtime.values()) {
+        for (const f of feedsOf(r)) if (!(f.waiting && starting++)) f.sync(state.time, true);
+      }
       commit('time');
+    }
+    if (ghosts.size) {
+      const k = 0.5 + 0.5 * Math.sin(now / 280);
+      ghostFill.opacity = 0.08 + 0.1 * k;
+      ghostEdge.opacity = 0.35 + 0.35 * k;
+      dirty = true;
     }
     if (orbit.update()) dirty = true;
     if (dirty) renderNow();
@@ -778,6 +861,7 @@ export function createViewport(host, hooks = {}, { quick = false } = {}) {
   function renderNow() {
     renderScene();
     dirty = false;
+    if (ghosts.size) placeGhostNotes();
     if (hovered) hooks.onHover?.(hovered, screenAnchor(hovered, hoveredSlot), hoveredSlot);
     hooks.onRender?.();
   }

@@ -12,11 +12,19 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { state, output, device as deviceById, asset as assetById } from './state.js';
-import { openSource } from './decoder.js';
 import { coverFit, sharpen } from './media.js';
 import { MODELS, setScreenImage, screenImage } from './devices.js';
+
+/* The MP4 muxer and the frame-exact decoder (decoder.js, with mp4box) load
+   on first use, not with the app: most visits never export. warmExport()
+   starts fetching them early — when the Export tab is opened or pointed at. */
+/* A page left open across a new release asks for files that release
+   replaced: say so, rather than fail obscurely. */
+const stale = () => { throw new Error('Mockup Studio has been updated since this page was opened. Reload the page to export.'); };
+const muxerLib = () => import('mp4-muxer').catch(stale);
+const decoderLib = () => import('./decoder.js').catch(stale);
+export function warmExport() { muxerLib().catch(() => {}); decoderLib().catch(() => {}); }
 
 export const canExportVideo = () => 'VideoEncoder' in window && 'VideoFrame' in window;
 
@@ -96,6 +104,7 @@ function stageScreens(vp) {
 }
 
 async function openScreens(vp) {
+  const { openSource } = await decoderLib();
   const screens = [];
   for (const { d, mesh, feed, aspect, media } of stageScreens(vp)) {
     const mat = mesh.material;
@@ -238,6 +247,7 @@ export async function exportVideo(vp, { bitrate, onProgress, signal, supersample
   const ss = supersampleFor(vp, width, height, supersample);
   await vp.modelsReady();
 
+  const { Muxer, ArrayBufferTarget } = await muxerLib();
   const target = new ArrayBufferTarget();
   const muxer = new Muxer({ target, video: { codec: 'avc', width, height, frameRate: fps }, fastStart: 'in-memory' });
   let encodeError = null;

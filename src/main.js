@@ -7,32 +7,23 @@
    cares about.
    ===================================================================== */
 
-import './styles.css';
 import * as THREE from 'three';
 import { createViewport } from './viewport.js';
-import { resolveMood } from './lighting.js';
-import { createUI, toast } from './ui.js';
-import { state, commit, subscribe, device as deviceById, asset as assetById, loadPrefs, savedScene, mergeScene, saveThumb, atDeviceLimit, deviceLimitMsg } from './state.js';
-import { MODELS, resolveModel, finishesFor, defaultColorFor, formOf, foldable, screenAspectOf } from './devices.js';
+import { resolveMood } from './moods.js';
+import { toast } from './common.js';
+import { BOOT } from './start.js';
+import { state, commit, subscribe, device as deviceById, asset as assetById, savedScene, mergeScene, saveThumb, atDeviceLimit, deviceLimitMsg } from './state.js';
+import { MODELS, resolveModel, finishesFor, defaultColorFor, formOf, foldable, screenAspectOf } from './catalog.js';
 import { importFiles as importMedia, removeAsset as dropAsset, setPlaceholderStyle } from './media.js';
 import { TEMPLATES, quickstart, newDevice } from './compose.js';
-import { createQuick } from './quick.js';
-
-loadPrefs();
 
 /* Quick mode, the phone layout (src/quick.js): touch-only devices with a
    short side under 768px. Touch tablets get it too, unless the full editor
-   was chosen from its Start screen. `?quick=1` / `?quick=0` force either. */
-function wantsQuick() {
-  const forced = new URLSearchParams(location.search).get('quick');
-  if (forced === '1') return true;
-  if (forced === '0') return false;
-  const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
-  if (!touchOnly) return false;
-  return Math.min(screen.width, screen.height) < 768 || state.prefs.editor !== 'full';
-}
-const QUICK = wantsQuick();
-const TABLET = QUICK && Math.min(screen.width, screen.height) >= 768;
+   was chosen from its Start screen. `?quick=1` / `?quick=0` force either.
+   Decided in index.html, before first paint (boot.js loads this module once
+   the start screen is up). */
+const QUICK = BOOT.quick;
+const TABLET = BOOT.tablet;
 
 let ui = null, quick = null;
 const host = document.getElementById('viewport-host');
@@ -366,11 +357,13 @@ const app = {
 /* The saved scene's thumbnail for the Start dialog, retaken when its
    devices or its mood change: a second after the last change, once the
    models and the mood's lighting have loaded, so quick edits make one
-   picture. Phones (Quick mode) don't show it, so don't take it. */
+   picture. Phones (Quick mode) don't show it, so don't take it — but drop
+   the last one, an earlier scene's: the card falls back to the template's. */
 let thumbFor = '', thumbTimer = 0;
 const thumbKey = () => `${state.devices.map((d) => d.model).join(',')}|${resolveMood(state.scene.light.mood) || state.scene.light.mood}`;
 function scheduleThumb() {
-  if (QUICK || !state.live || thumbKey() === thumbFor) return;
+  if (!state.live || thumbKey() === thumbFor) return;
+  if (QUICK) { thumbFor = thumbKey(); saveThumb(null); return; }
   clearTimeout(thumbTimer);
   thumbTimer = setTimeout(async () => {
     await vp.modelsReady();
@@ -395,47 +388,32 @@ subscribe((tag) => {
 
 vp.applySceneSettings();
 
+/* The interface, in its own task: the start screen stays responsive between
+   setting up the renderer and building the panels. Its Start screen is
+   already up (start.js); a choice made on it while this loaded runs now. */
+await new Promise((r) => setTimeout(r, 0));
 if (QUICK) {
   setPlaceholderStyle('add');
+  const { createQuick } = await import('./quick.js');
   quick = createQuick(app);
 } else {
+  const { createUI } = await import('./ui.js');
   ui = createUI(app);
-  bootDesktop();
+  offerQuickMode();
 }
 
-/* Small windows get a notice first: the full editor needs a large screen, a
-   precise pointer, and the memory to render and encode video. It's a notice,
-   not a block — "Continue anyway" proceeds. (Phones get Quick mode instead;
-   a touch tablet that chose the full editor has seen what it's choosing.) */
-function bootDesktop() {
-  const smallOrTouchOnly = state.prefs.editor !== 'full' && (
-    matchMedia('(max-width: 899px)').matches ||
-    (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches));
-  let dismissed = false;
-  try { dismissed = sessionStorage.getItem('mockup-studio.desktop-ok') === '1'; } catch {}
-  if (smallOrTouchOnly && !dismissed) {
-    const notice = document.getElementById('desktop-only');
-    notice.hidden = false;
-    document.getElementById('desktop-continue').addEventListener('click', () => {
-      try { sessionStorage.setItem('mockup-studio.desktop-ok', '1'); } catch {}
-      notice.hidden = true;
-      ui.openStart(!!savedScene());
-    });
-  } else {
-    ui.openStart(!!savedScene());
-  }
-  // a touch tablet that chose the full editor can go back
-  if (state.prefs.editor === 'full' && matchMedia('(pointer: coarse)').matches) {
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'text-btn';
-    back.textContent = 'Quick mode';
-    back.addEventListener('click', () => { state.prefs.editor = 'quick'; commit('prefs'); setTimeout(() => location.reload(), 350); });
-    const about = document.getElementById('open-about');
-    about.style.marginLeft = '16px';
-    back.style.marginLeft = 'auto';
-    about.before(back);
-  }
+/* A touch tablet that chose the full editor can go back. */
+function offerQuickMode() {
+  if (state.prefs.editor !== 'full' || !matchMedia('(pointer: coarse)').matches) return;
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'text-btn';
+  back.textContent = 'Quick mode';
+  back.addEventListener('click', () => { state.prefs.editor = 'quick'; commit('prefs'); setTimeout(() => location.reload(), 350); });
+  const about = document.getElementById('open-about');
+  about.style.marginLeft = '16px';
+  back.style.marginLeft = 'auto';
+  about.before(back);
 }
 
 // handy for debugging and for automated checks

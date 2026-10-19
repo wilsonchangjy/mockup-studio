@@ -3,7 +3,7 @@
 Compose 3D device mockups from your screen recordings and export them as video
 or images, entirely in your browser.
 
-![The Mockup Studio editor: an open iPhone Duo selected on the stage, with the asset library on the left and its device settings on the right](docs/preview.png)
+![The Mockup Studio editor: an open iPhone Duo selected on the stage, with the asset library on the left and its device settings on the right](.github/preview.png)
 
 Built because most mockup tools either produce stills, watermark the output, or
 only allow **one** device per composition.
@@ -84,13 +84,13 @@ node scripts/prepare-models.mjs <model-id> --debug   # trimmed copy with part na
 node scripts/prepare-models.mjs <model-id>           # write public/models/<model-id>.glb
 ```
 
-Then point the model's entry in `src/devices.js` at it with
+Then point the model's entry in `src/catalog.js` at it with
 `glb: { file, native }`, where `native` is the finish it was modelled in
 (or `recolour: 'assign'` for a model made in black). The options are
 documented at the top of the script.
 
 A foldable is two entries in `CONFIG`, one per form, from the same download
-(the files model both); its `src/devices.js` entry names the second under
+(the files model both); its `src/catalog.js` entry names the second under
 `closed`.
 
 ## Running it
@@ -218,17 +218,23 @@ export works everywhere WebGL does. The full editor is designed for desktop scre
 ## Project layout
 
 ```
-index.html        app shell
+index.html        app shell, with both start screens (cards written in by vite.config.js)
 src/
+  boot.js         first load: styles, store, start screens; loads the rest after first paint
+  start.js        the start screens' behaviour, before and after the app has loaded
   main.js         actions and wiring
   ui.js           panels, inspector, dialogs, drag & drop
   quick.js, quick.css  Quick mode, the phone layout
+  common.js       toasts and the About page, shared by both interfaces
   viewport.js     three.js scene, camera, gizmos, picking
   contactShadow.js  soft floor shadows
-  devices.js      device library: models, finishes, hinges, screens
-  lighting.js     lighting moods and their environments
+  catalog.js      device catalogue: sizes, finishes, resolutions, credits (no three.js)
+  devices.js      device models: loading, recolouring, hinges, screens
+  moods.js        lighting moods (no three.js)
+  lighting.js     the moods' environments
+  hdrWorker.js    decodes lighting panoramas off the main thread
   media.js        asset import and per-screen video feeds
-  decoder.js      frame-exact MP4 decoding for export
+  decoder.js      frame-exact MP4 decoding for export (loads on first use)
   exporter.js     image and video export
   compose.js      device detection, quickstart layout, templates
   state.js        store and persistence

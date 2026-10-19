@@ -296,6 +296,9 @@ export class ScreenFeed {
     return this.trim + ((t * this.rate) % span);
   }
 
+  /** Has a video that isn't playing: starting it costs a decoder and a first upload. */
+  get waiting() { return !!this.video && this.video.paused; }
+
   sync(t, playing) {
     const v = this.video;
     if (!v) return;

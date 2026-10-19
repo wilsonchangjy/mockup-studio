@@ -25,12 +25,15 @@
 
 import './quick.css';
 import { state, commit, subscribe, device as deviceById, asset as assetById, OUTPUTS, output, savedScene, defaultScene } from './state.js';
-import { MODELS, finishesFor, screenAspectOf } from './devices.js';
-import { MOODS, resolveMood } from './lighting.js';
-import { TEMPLATES } from './compose.js';
-import { exportImage, exportVideo, canExportVideo, download, bitrateForQuality, DEFAULT_QUALITY } from './exporter.js';
-import { decodesExactly } from './decoder.js';
-import { setToast, aboutHTML } from './ui.js';
+import { MODELS, finishesFor, screenAspectOf } from './catalog.js';
+import { MOODS, resolveMood } from './moods.js';
+import { TEMPLATES, templateShape } from './compose.js';
+import { exportImage, exportVideo, canExportVideo, download, bitrateForQuality, DEFAULT_QUALITY, warmExport } from './exporter.js';
+import { setToast } from './common.js';
+import { onStart, showQuickStart } from './start.js';
+
+/** Does this footage decode frame-exactly? (decoder.js, which loads on first use.) */
+const decodesExactly = (a) => import('./decoder.js').then((m) => m.decodesExactly(a), () => true);   // unknown: no warning
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -77,16 +80,6 @@ const num2 = (i) => String(i + 1).padStart(2, '0');
 const clock = (s) => { const t = Math.round(s); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 const swatchBg = (b) => (b.mode === 'solid' ? b.color : `linear-gradient(${b.top}, ${b.bottom})`);
 
-/** "2 SCREENS · LANDSCAPE + PORTRAIT", from a template's devices. */
-function describe(tpl, short = false) {
-  const devices = tpl.build().devices;
-  const wide = devices.map((d) => (screenAspectOf(d.model, d.folded) > 1) !== !!d.landscape);
-  const L = wide.filter(Boolean).length, P = wide.length - L;
-  const shape = !L ? 'PORTRAIT' : !P ? 'LANDSCAPE' : L === P ? 'LANDSCAPE + PORTRAIT' : L > P ? 'MOSTLY LANDSCAPE' : 'MOSTLY PORTRAIT';
-  const n = devices.length;
-  return short ? `${n} · ${shape}` : `${n} SCREEN${n > 1 ? 'S' : ''} · ${shape}`;
-}
-
 /* ============================== Quick mode ============================== */
 
 export function createQuick(app) {
@@ -96,8 +89,7 @@ export function createQuick(app) {
   // appearance follows the phone's setting; the saved choice stays for the full editor
   delete root.dataset.theme;
   const TPLS = TEMPLATES.filter((t) => t.id !== 'blank');
-  const DESC = new Map(TPLS.map((t) => [t.id, describe(t)]));
-  const DESC_SHORT = new Map(TPLS.map((t) => [t.id, describe(t, true)]));
+  const DESC_SHORT = new Map(TPLS.map((t) => [t.id, templateShape(t, true)]));
 
   state.prefs.quickShape ||= '1080x1920';
   state.prefs.quickFile ||= 'mp4';
@@ -117,9 +109,9 @@ export function createQuick(app) {
   };
 
   /* ------------------------------ layout ------------------------------ */
-  const ui = h('div', 'q');
-  ui.id = 'quick';
-  ui.innerHTML = `
+  // index.html has the start page in it already (start.js); the rest goes before it
+  const ui = $('#quick');
+  ui.insertAdjacentHTML('afterbegin', `
     <header class="q-head">
       <div class="q-word" aria-label="Mockup Studio">Mockup<span>Stu<span class="di">di</span>o</span></div>
       <span class="q-readout mono" id="q-readout"></span>
@@ -144,9 +136,7 @@ export function createQuick(app) {
       <button type="button" data-sheet="look" aria-expanded="false"><span class="mono">02</span>Look</button>
       <button type="button" data-sheet="format" aria-expanded="false"><span class="mono">03</span>Format</button>
       <button type="button" data-sheet="export" class="go" aria-expanded="false"><span class="mono">04</span>Export</button>
-    </nav>
-    <section class="q-start" id="q-start" aria-labelledby="q-start-title" hidden></section>`;
-  document.body.append(ui);
+    </nav>`);
 
   // the render fills the screen behind everything; overlays on it live in the host
   const host = $('#viewport-host');
@@ -306,6 +296,7 @@ export function createQuick(app) {
   /* ------------------------------ sheets ------------------------------ */
   function openSheet(kind, args = {}) {
     if (state.exporting && !['exporting'].includes(kind)) return;
+    if (kind === 'export' || kind === 'format') warmExport();   // the encoder loads on first use
     sheet = { kind, ...args };
     selected = kind === 'screen' ? { id: args.id, slot: args.slot || 'main' } : null;
     if (uiHidden) uiHidden = false;
@@ -795,59 +786,11 @@ export function createQuick(app) {
   }
 
   /* ------------------------------ start ------------------------------- */
+  // the start page is index.html's (start.js shows it); what its choices do
   function showStart() {
     app.pause();
     closeSheet(false);
-    const saved = savedScene();
-    startEl.replaceChildren();
-    const word = h('div', 'q-start-word');
-    word.innerHTML = 'Mockup <span class="dotted">Stu<span class="di">di</span>o</span>';
-    const title = h('h1', null);
-    title.id = 'q-start-title';
-    title.innerHTML = 'Start a <span class="dotted">mockup</span>';
-    startEl.append(word, title);
-    if (saved) {
-      const t = TPLS.find((x) => x.id === saved.scene?.template);
-      const n = saved.devices.length;
-      const cont = btn('q-continue', null, () => { app.restoreLast({ quiet: true }); syncLength(); hideStart(); });
-      const txt = h('span');
-      txt.append(h('span', 'q-cont-t', 'Continue last scene'), h('span', 'mono dim q-cont-d', `${t ? `${t.name.toUpperCase()} · ` : ''}${n} SCREEN${n > 1 ? 'S' : ''}`));
-      const arr = h('span');
-      arr.innerHTML = ICON.arrow;
-      cont.append(txt, arr.firstChild);
-      startEl.append(cont);
-    }
-    const sec = h('section', 'q-tpls');
-    sec.setAttribute('aria-labelledby', 'q-tpl-h');
-    const sh = h('div', 'q-sh');
-    const l = h('span', null, 'Templates ');
-    l.id = 'q-tpl-h';
-    l.append(h('span', 'dim', String(TPLS.length)));
-    sh.append(l, h('span', 'dim q-best', 'Best for'));
-    const list = h('div', 'q-tpl-list');
-    for (const t of TPLS) {
-      const b = btn('q-tpl', null, () => { app.useTemplate(t.id, { quiet: true }); syncLength(); hideStart(); });
-      const img = h('img'); img.src = `templates/${t.id}.webp`; img.alt = '';
-      const txt = h('span');
-      txt.append(h('span', 't', t.name), h('span', 'd', DESC.get(t.id)));
-      b.append(img, txt);
-      list.append(b);
-    }
-    sec.append(sh, list);
-    const foot = h('div', 'q-start-foot');
-    if (app.tablet) {
-      foot.append(btn('q-tbtn q-full', 'Full editor', () => {
-        state.prefs.editor = 'full';
-        commit('prefs');
-        setTimeout(() => location.reload(), 350);
-      }));
-    }
-    foot.append(btn('q-tbtn q-about', 'About', () => {
-      $('#about-body').innerHTML = aboutHTML();
-      $('#about-dialog').showModal();
-    }));
-    startEl.append(sec, foot);
-    startEl.hidden = false;
+    showQuickStart();
     ui.classList.add('starting');
   }
   function hideStart() {
@@ -880,6 +823,11 @@ export function createQuick(app) {
   layout();
   renderAll();
   showStart();
+  // a choice made on the start page while this loaded runs now
+  onStart({
+    template(id) { app.useTemplate(id, { quiet: true }); syncLength(); hideStart(); },
+    restore() { app.restoreLast({ quiet: true }); syncLength(); hideStart(); },
+  });
 
   return { onTap, onRender, onFrame };
 }

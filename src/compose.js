@@ -7,7 +7,7 @@
    changed in the inspector afterwards.
    ===================================================================== */
 
-import { MODELS, defaultColorFor, hingeOf, screenAspectOf, formOf } from './devices.js';
+import { MODELS, defaultColorFor, hingeOf, screenAspectOf, formOf } from './catalog.js';
 import { uid, defaultScene, mergeScene } from './state.js';
 
 /* Short-edge pixel widths seen in iPhone screen recordings and exports,
@@ -278,3 +278,13 @@ export const TEMPLATES = [
     build: () => ({ devices: [], scene: studio(), cameraDir: [0, 0.2, 1] }),
   },
 ];
+
+/** "2 SCREENS · LANDSCAPE + PORTRAIT", from a template's devices. */
+export function templateShape(tpl, short = false) {
+  const devices = tpl.build().devices;
+  const wide = devices.map((d) => (screenAspectOf(d.model, d.folded) > 1) !== !!d.landscape);
+  const L = wide.filter(Boolean).length, P = wide.length - L;
+  const shape = !L ? 'PORTRAIT' : !P ? 'LANDSCAPE' : L === P ? 'LANDSCAPE + PORTRAIT' : L > P ? 'MOSTLY LANDSCAPE' : 'MOSTLY PORTRAIT';
+  const n = devices.length;
+  return short ? `${n} · ${shape}` : `${n} SCREEN${n > 1 ? 'S' : ''} · ${shape}`;
+}

@@ -538,6 +538,13 @@ input[type="checkbox"] { accent-color: var(--ink); margin: 0; }
 
 #viewport-host:has(.toast:not([hidden])) .stage-hint { visibility: hidden; }
 
+/* over a device's stand-in while its model downloads (viewport.js, showGhost) */
+.ghost-note {
+  position: absolute; z-index: 5; transform: translate(-50%, -50%); pointer-events: none;
+  padding: 3px 7px; background: var(--card); border: 1px solid var(--rule);
+  font: 11px var(--mono); color: var(--dim); white-space: nowrap;
+}
+
 /* a note in the stage's corner while device models download */
 .stage-note {
   position: absolute; left: 12px; bottom: 10px; z-index: 5; pointer-events: none;
@@ -611,7 +618,7 @@ dialog::backdrop { background: rgba(20, 20, 19, .45); }
   display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 28px; padding: 24px 32px 0;
 }
 /* the upload column stays in view while the templates scroll: as tall as
-   what's visible (--start-h, set in ui.js) less 24px above and below. Its
+   what's visible (--start-h, set in index.html and start.js) less 24px above and below. Its
    sticky offset counts from inside the grid's 24px padding, hence top: 0 */
 .upload-card {
   position: sticky; top: 0; align-self: start;
@@ -627,6 +634,12 @@ dialog::backdrop { background: rgba(20, 20, 19, .45); }
    scrolling grid's own bottom padding isn't scrollable in every browser */
 .start-grid .templates-col { padding-bottom: 24px; }
 .saved-scenes { display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px; }
+/* two lines, held from first paint: the card's filled in once start.js runs,
+   and the templates below mustn't move when it is (its label has the rest) */
+.saved-scenes .tpl .d {
+  min-height: calc(2 * 1.35em);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
 .templates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 16px; }
 .tpl {
   background: none; border: 0; padding: 0; text-align: left; min-width: 0;
@@ -730,4 +743,17 @@ dialog::backdrop { background: rgba(20, 20, 19, .45); }
   .about .sheet-head h2 { font-size: 40px; }
   .about-sec { grid-template-columns: 1fr; gap: 8px; }
   .about .credits { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------- first load --------------------------- */
+/* Quick mode's start page is in index.html for everyone (start.js) */
+html:not(.quick) #quick { display: none; }
+/* a start-screen choice made while the app is still loading */
+[aria-busy="true"] { cursor: progress; }
+.tpl[aria-busy="true"] .art, .q-tpl[aria-busy="true"] img, .q-continue[aria-busy="true"], .upload-card[aria-busy="true"] {
+  animation: loading-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes loading-pulse { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .tpl[aria-busy="true"] .art, .q-tpl[aria-busy="true"] img, .q-continue[aria-busy="true"], .upload-card[aria-busy="true"] { animation: none; opacity: .6; }
 }

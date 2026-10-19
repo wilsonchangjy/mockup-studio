@@ -23,17 +23,31 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Mockup Studio: an open iPhone Duo being set up on the stage">
 <meta name="twitter:card" content="summary_large_image">
+<!-- the two fonts on the start screen, found here instead of after the stylesheet -->
+<link rel="preload" href="./src/fonts/instrument-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./src/fonts/doto-700-latin.woff2" as="font" type="font/woff2" crossorigin>
 <script>
-  /* apply the saved theme before first paint, so there's no light/dark flash —
-     except in Quick mode (phones, touch tablets; see wantsQuick in src/main.js),
-     which follows the system */
-  try {
-    const prefs = JSON.parse(localStorage.getItem('mockup-studio.v2.prefs') || '{}');
+  /* Which start this visit gets, decided before first paint so the start
+     screen can show straight from this page, before the app's JavaScript:
+     Quick mode (touch-only phones, and touch tablets unless the full editor
+     was chosen; ?quick=1 / ?quick=0 force either), the notice for small
+     windows, or the editor's Start dialog. src/start.js reads the result.
+     Also applies the saved theme, so there's no light/dark flash, except in
+     Quick mode, which follows the system. */
+  (() => {
+    let prefs = {}, saved = false, ok = false;
+    try { prefs = JSON.parse(localStorage.getItem('mockup-studio.v2.prefs') || '{}'); } catch {}
+    try { saved = !!JSON.parse(localStorage.getItem('mockup-studio.v2.scene') || 'null')?.devices?.length; } catch {}
+    try { ok = sessionStorage.getItem('mockup-studio.desktop-ok') === '1'; } catch {}
     const forced = new URLSearchParams(location.search).get('quick');
     const touchOnly = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
-    const quick = forced === '1' || (forced !== '0' && touchOnly && (Math.min(screen.width, screen.height) < 768 || prefs.editor !== 'full'));
-    if (!quick && (prefs.theme === 'light' || prefs.theme === 'dark')) document.documentElement.dataset.theme = prefs.theme;
-  } catch {}
+    const short = Math.min(screen.width, screen.height);
+    const quick = forced === '1' || (forced !== '0' && touchOnly && (short < 768 || prefs.editor !== 'full'));
+    const notice = !quick && !ok && prefs.editor !== 'full' && (matchMedia('(max-width: 899px)').matches || touchOnly);
+    window.__mockupBoot = { quick, tablet: quick && short >= 768, notice, saved };
+    if (quick) document.documentElement.classList.add('quick');
+    else if (prefs.theme === 'light' || prefs.theme === 'dark') document.documentElement.dataset.theme = prefs.theme;
+  })();
 </script>
 </head>
 <body>
@@ -204,10 +218,12 @@
     <div class="templates-col">
       <div class="saved-scenes" id="saved-scenes" hidden>
         <div class="sh"><span>Continue last scene</span></div>
-        <div class="templates" id="saved-grid"></div>
+        <!-- src/start.js puts the last scene's card here; until then, a card's shape -->
+        <div class="templates" id="saved-grid"><button class="tpl" type="button" disabled aria-hidden="true"><span class="art dots"></span><span class="t">&nbsp;</span><span class="d">&nbsp;</span></button></div>
       </div>
-      <div class="sh"><span>Templates <span class="count" id="template-count"></span></span></div>
-      <div class="templates" id="template-grid"></div>
+      <div class="sh"><span>Templates <span class="count" id="template-count"><!-- templates:count --></span></span></div>
+      <div class="templates" id="template-grid"><!-- templates:editor -->
+      </div>
     </div>
   </div>
 </dialog>
@@ -230,8 +246,48 @@
   </div>
 </div>
 
+<!-- Quick mode's start (src/quick.js builds the rest of Quick mode around it) -->
+<div class="q starting" id="quick">
+  <section class="q-start" id="q-start" aria-labelledby="q-start-title">
+    <div class="q-start-word">Mockup <span class="dotted">Stu<span class="di">di</span>o</span></div>
+    <h1 id="q-start-title">Start a <span class="dotted">mockup</span></h1>
+    <button class="q-continue" id="q-continue" type="button" hidden>
+      <span><span class="q-cont-t">Continue last scene</span><span class="mono dim q-cont-d" id="q-continue-d">&nbsp;</span></span>
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 9h12M10 4l5 5-5 5"/></svg>
+    </button>
+    <section class="q-tpls" aria-labelledby="q-tpl-h">
+      <div class="q-sh"><span id="q-tpl-h">Templates <span class="dim"><!-- templates:quick-count --></span></span><span class="dim q-best">Best for</span></div>
+      <div class="q-tpl-list"><!-- templates:quick -->
+      </div>
+    </section>
+    <div class="q-start-foot">
+      <button class="q-tbtn q-full" id="q-full" type="button" hidden>Full editor</button>
+      <button class="q-tbtn q-about" id="q-about" type="button">About</button>
+    </div>
+  </section>
+</div>
+
 <input type="file" id="replace-input" accept="video/*,image/*" hidden>
 
-<script type="module" src="./src/main.js"></script>
+<script>
+  /* This visit's start screen, on first paint (see the script in <head>).
+     src/start.js fills in the last scene and makes it all work. */
+  (() => {
+    const b = window.__mockupBoot, $ = (id) => document.getElementById(id);
+    if (b.quick) {
+      $('q-continue').hidden = !b.saved;
+      $('q-full').hidden = !b.tablet;
+    } else if (b.notice) {
+      $('desktop-only').hidden = false;
+    } else {
+      $('saved-scenes').hidden = !b.saved;
+      $('start-dialog').showModal();
+      // the upload column's height (styles.css, .upload-card), now rather than once the app runs
+      const g = document.querySelector('.start-grid');
+      g.style.setProperty('--start-h', `${g.clientHeight}px`);
+    }
+  })();
+</script>
+<script type="module" src="./src/boot.js"></script>
 </body>
 </html>

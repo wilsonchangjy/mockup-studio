@@ -10,7 +10,7 @@
    only in memory: localStorage holds ~5MB of strings, nowhere near video.
    ===================================================================== */
 
-import { MOODS } from './lighting.js';
+import { MOODS } from './moods.js';
 
 const KEY = 'mockup-studio.v2.scene';
 const PREFS = 'mockup-studio.v2.prefs';

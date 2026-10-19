@@ -34,57 +34,9 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
-/* hdri.azimuth: where the panorama's main light is (0 = the camera's side,
-   positive to the right, as the Direction slider); exposure: brings each
-   panorama to a common brightness (they're photographed at different ones);
-   the Ambient slider scales from there. */
-export const MOODS = {
-  studio: {
-    label: 'Softbox studio',
-    hdri: { file: 'studio_kontrast_04', azimuth: -56, exposure: 0.75 },
-    light: { key: 1.0, env: 1.0, angle: -45, elevation: 35, color: '#ffffff' },
-    rim: 0.3,
-    background: { mode: 'gradient', top: '#e7e9ec', bottom: '#c3c7cd' },
-    ground: { shadow: 0.6, softness: 0.35 },
-  },
-  highkey: {
-    label: 'High key',
-    hdri: { file: 'story_studio_05', azimuth: 0, exposure: 5 },   // lit from overhead; its walls are dim
-    light: { key: 0.5, env: 1.0, angle: -20, elevation: 60, color: '#ffffff' },
-    rim: 0,
-    background: { mode: 'gradient', top: '#ffffff', bottom: '#eceef1' },
-    ground: { shadow: 0.38, softness: 0.6 },
-  },
-  lowkey: {
-    label: 'Low key',
-    // the room is held well down, so the octaboxes' highlights carry the shot
-    hdri: { file: 'studio_small_09', azimuth: 56, exposure: 0.3 },
-    light: { key: 1.1, env: 1.0, angle: 60, elevation: 30, color: '#ffffff' },
-    rim: 2.2,
-    background: { mode: 'gradient', top: '#2a2d33', bottom: '#08090b' },
-    ground: { shadow: 0.7, softness: 0.3 },
-  },
-  window: {
-    label: 'Window light',
-    hdri: { file: 'brown_photostudio_04', azimuth: 72, exposure: 0.8 },
-    light: { key: 1.3, env: 1.0, angle: -70, elevation: 20, color: '#fff6ea' },
-    rim: 0,
-    background: { mode: 'gradient', top: '#f2eee7', bottom: '#d6cfc3' },
-    ground: { shadow: 0.6, softness: 0.4 },
-  },
-  golden: {
-    label: 'Golden hour',
-    hdri: { file: 'qwantani_dusk_2_puresky', azimuth: 72, exposure: 0.75 },
-    light: { key: 2.0, env: 1.0, angle: 70, elevation: 14, color: '#ffa880' },
-    rim: 0,
-    background: { mode: 'gradient', top: '#f2d3b0', bottom: '#b68564' },
-    ground: { shadow: 0.5, softness: 0.3 },
-  },
-};
+import { MOODS } from './moods.js';
 
-/* Moods from before the setups above; saved scenes keep working. */
-const ALIASES = { daylight: 'window', sunset: 'golden', night: 'lowkey', bright: 'highkey' };
-export const resolveMood = (id) => (MOODS[id] ? id : ALIASES[id] || null);
+export { MOODS, resolveMood } from './moods.js';
 
 /* ------------------------------ stand-in ------------------------------ */
 
@@ -141,6 +93,54 @@ function standInScene() {
   return { scene, mask };
 }
 
+/* ------------------------------ decoding ------------------------------ */
+
+/* Panoramas decode in a worker (hdrWorker.js); where one can't start, on
+   the main thread as before. */
+let worker = null, workerFailed = false, nextJob = 0;
+const jobs = new Map();
+function decodeHDR(url) {
+  if (!workerFailed && !worker) {
+    try {
+      worker = new Worker(new URL('./hdrWorker.js', import.meta.url), { type: 'module' });
+      worker.onmessage = ({ data }) => {
+        const job = jobs.get(data.id);
+        jobs.delete(data.id);
+        if (data.error) job?.reject(new Error(data.error)); else job?.resolve(data);
+      };
+      worker.onerror = () => {   // the worker itself failed to load: fall back, for these and later ones
+        workerFailed = true; worker = null;
+        for (const [, job] of jobs) job.fallback();
+        jobs.clear();
+      };
+    } catch { workerFailed = true; worker = null; }
+  }
+  const onMain = () => new HDRLoader().loadAsync(url);
+  if (!worker) return onMain();
+  return new Promise((resolve, reject) => {
+    const id = ++nextJob;
+    jobs.set(id, {
+      resolve: ({ width, height, data, type }) => {
+        const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, type);
+        // as HDRLoader sets them
+        tex.colorSpace = THREE.LinearSRGBColorSpace;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+        tex.flipY = true;
+        tex.needsUpdate = true;
+        resolve(tex);
+      },
+      reject,
+      fallback: () => onMain().then(resolve, reject),
+    });
+    worker.postMessage({ id, url });
+  });
+}
+
+/** When the page has a moment: GPU work that isn't urgent waits for a gap
+    between frames and input instead of landing on a tap. */
+const idle = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(r, { timeout: 400 }) : setTimeout(r, 50)));
+
 /* ---------------------------- environments ---------------------------- */
 
 /** Environment maps per mood and size ('1k', or '2k' for glossy screens),
@@ -151,19 +151,27 @@ function standInScene() {
     the fallback stays). */
 export function createEnvironments(renderer, onReady) {
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const loader = new HDRLoader();
   const made = new Map();     // 'mood:size' → { texture, azimuth, exposure }, once loaded
   const loading = new Map();  // 'mood:size' → promise
-  let standIn = null;
+  let standIn = null, standInQueued = false;
+  // until the stand-in is made: no environment (nothing's on stage that early)
+  const none = { texture: null, azimuth: 0, exposure: 1 };
 
+  /* The stand-in is made once, when the page is idle, not while the start
+     screen is taking its first taps. */
   function useStandIn() {
-    if (!standIn) {
-      const { scene, mask } = standInScene();
-      standIn = { texture: pmrem.fromScene(scene, 0.04).texture, azimuth: STAND_IN.azimuth, exposure: STAND_IN.exposure };
-      scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
-      mask.dispose();
+    if (standIn) return standIn;
+    if (!standInQueued) {
+      standInQueued = true;
+      idle().then(() => {
+        const { scene, mask } = standInScene();
+        standIn = { texture: pmrem.fromScene(scene, 0.04).texture, azimuth: STAND_IN.azimuth, exposure: STAND_IN.exposure };
+        scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+        mask.dispose();
+        onReady?.();
+      });
     }
-    return standIn;
+    return none;
   }
 
   function load(mood, size = '1k') {
@@ -171,8 +179,9 @@ export function createEnvironments(renderer, onReady) {
     if (!spec || made.has(key)) return Promise.resolve();
     if (!loading.has(key)) {
       const url = new URL(`environments/${spec.file}_${size}.hdr`, document.baseURI).href;
-      loading.set(key, loader.loadAsync(url).then((tex) => {
+      loading.set(key, decodeHDR(url).then(async (tex) => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
+        await idle();   // preparing it for reflections is GPU work: between interactions
         made.set(key, { texture: pmrem.fromEquirectangular(tex).texture, azimuth: spec.azimuth, exposure: spec.exposure });
         tex.dispose();
         onReady?.(mood);

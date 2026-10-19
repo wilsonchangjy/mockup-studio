@@ -297,7 +297,7 @@ html.quick .stage-note { top: calc(66px + env(safe-area-inset-top)); left: 16px;
 .q-tpl .d { display: block; margin-top: 4px; font: 11px var(--mono); color: var(--dim); letter-spacing: .02em; }
 .q-start-foot { margin-top: auto; display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .q-start-foot .q-tbtn { margin-left: auto; text-decoration: none; }
-.q-start-foot .q-full + .q-about { margin-left: 16px; }
+.q-start-foot .q-full:not([hidden]) + .q-about { margin-left: 16px; }
 .q-start-foot .q-about { text-decoration: underline; }
 
 /* ------------------------------ About (M14) ---------------------------- */

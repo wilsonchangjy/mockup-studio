@@ -29,8 +29,6 @@ Test Exports/
 # raw model downloads (processed copies live in public/models)
 /Models/
 
-# working notes
-HANDOFF.md
-QUALITYCHECK.md
-MOBILE-HANDOFF.md
-MOBILE-PRD.md
+# working notes: PRDs, handoffs and design docs (the README's preview
+# image lives in .github/)
+docs/
