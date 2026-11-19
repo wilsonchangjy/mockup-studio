@@ -140,6 +140,7 @@ export function loadModel(modelId, folded) {
         const s = box.getSize(new THREE.Vector3());
         return s.x / s.y;
       };
+      if (spec.webcam) fixWebcam(scene, spec.webcam);
       entry.screenAspect = aspect(parts.main);
       entry.coverAspect = parts.cover.length ? aspect(parts.cover) : 0;
       entry.scene = scene;
@@ -152,6 +153,38 @@ export function loadModel(modelId, folded) {
     detailed.set(spec.file, entry);
   }
   return entry.promise;
+}
+
+/* A webcam: a matte black barrel behind glass. The barrel is matte because
+   it sits a little behind the bezel: anything shiny there mirrors the
+   studio at an angle, as a bright disc beside the hole. The shine belongs
+   to the glass, flush with the bezel, so it stays over the hole: black and
+   added on, like a screen's glare layer, so only its reflection shows. */
+let webcamBarrel = null, webcamCover = null;
+function fixWebcam(scene, { barrel = [], glass = [] }) {
+  webcamBarrel ||= new THREE.MeshStandardMaterial({
+    name: 'webcam', color: 0x050608, roughness: 0.7, metalness: 0, envMapIntensity: 0.15,
+  });
+  webcamCover ||= new THREE.MeshPhysicalMaterial({
+    name: 'webcam-glass', color: 0x000000, metalness: 0, roughness: 0.08, ior: 1.5,
+    // a sheen, not a white dot: at a glancing angle the studio's softboxes fill it
+    transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
+  });
+  const box = new THREE.Box3(), size = new THREE.Vector3();
+  const small = (o) => box.setFromObject(o).getSize(size).length() < 0.006;   // not a bigger part sharing the material
+  const found = [];
+  scene.traverse((o) => { if (o.isMesh && (barrel.includes(o.material.name) || glass.includes(o.material.name)) && small(o)) found.push(o); });
+  for (const o of found) {
+    const isBarrel = barrel.includes(o.material.name), isGlass = glass.includes(o.material.name);
+    if (isBarrel) o.material = webcamBarrel;
+    if (isGlass && !isBarrel) { o.material = webcamCover; o.castShadow = false; }
+    if (isGlass && isBarrel) {   // one part for the whole camera: the glass goes over it
+      const cover = new THREE.Mesh(o.geometry, webcamCover);
+      cover.raycast = () => {};
+      o.add(cover);
+    }
+  }
 }
 
 /* An instance shares geometry and textures with the loaded model. Materials

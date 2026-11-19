@@ -71,6 +71,11 @@ const FOLD = { label: 'Angle', min: 0, max: 180, rest: 180 };
    models in black, which scaling can't lift evenly. recolour: 'tone' sets
    each part to the finish at the part's own brightness relative to
    `native`: for untextured models whose parts differ in shade, not hue.
+   webcam: the front camera's parts, by material. barrel: what sits behind
+   the lens, modelled plain white (or, on the iMac, the whole camera), which
+   read as a bright dot in the bezel: made matte black. glass: the cover over
+   the hole, modelled all but invisible: given a glass's reflection. Only
+   parts under 6 mm; bigger parts sharing a material keep it (devices.js).
    licence: when not CC BY 4.0. */
 export const MODELS = {
   /* ------------------------------ phones ------------------------------ */
@@ -164,25 +169,25 @@ export const MODELS = {
     family: 'laptop', brand: 'Apple', label: 'MacBook Air 13"', finishes: F.macbookAir,
     base: { w: 304.1, d: 215, t: 6.8 }, res: [2560, 1664],
     hinge: LID,
-    glb: { file: 'macbook-air-13', native: '#7d7e80' },   // modelled in Space Grey, which the Air no longer comes in
+    glb: { file: 'macbook-air-13', native: '#7d7e80', webcam: { barrel: ['cxUkZOXjaaYkodT'], glass: ['bcpnEXkmszsmZdS'] } },   // modelled in Space Grey, which the Air no longer comes in
   },
   'macbook-air-15': {
     family: 'laptop', brand: 'Apple', label: 'MacBook Air 15"', finishes: F.macbookAir,
     base: { w: 340.4, d: 237.6, t: 7.0 }, res: [2880, 1864],
     hinge: LID,
-    glb: { file: 'macbook-air-15', native: '#7d7e80' },
+    glb: { file: 'macbook-air-15', native: '#7d7e80', webcam: { barrel: ['rvYnnyqXrbFJXxh'], glass: ['SsSIPrCyVNTOxvd'] } },
   },
   'macbook-pro-14': {
     family: 'laptop', brand: 'Apple', label: 'MacBook Pro 14"', finishes: F.macbookPro,
     base: { w: 312.6, d: 221.2, t: 10 }, res: [3024, 1964],
     hinge: LID,
-    glb: { file: 'macbook-pro-14', native: '#e3e4e5' },
+    glb: { file: 'macbook-pro-14', native: '#e3e4e5', webcam: { barrel: ['jRMWtdSAaujlvUA'], glass: ['BczvixNfkWQzRzZ'] } },
   },
   'macbook-pro-16': {
     family: 'laptop', brand: 'Apple', label: 'MacBook Pro 16"', finishes: F.macbookPro,
     base: { w: 355.7, d: 248.1, t: 11 }, res: [3456, 2234],
     hinge: LID,
-    glb: { file: 'macbook-pro-16', native: '#e3e4e5' },
+    glb: { file: 'macbook-pro-16', native: '#e3e4e5', webcam: { barrel: ['CnxtCtLZokWEuBx'], glass: ['HdizSXcPCyRZnnP'] } },
   },
 
   /* ------------------------------ desktops ---------------------------- */
@@ -190,7 +195,7 @@ export const MODELS = {
     family: 'desktop', brand: 'Apple', label: 'iMac 24"', finishes: F.imac,
     panelW: 547, height: 461, res: [4480, 2520],
     hinge: { kind: 'tilt', label: 'Tilt', min: -5, max: 15, rest: 5 },
-    glb: { file: 'imac-24', native: '#3378a4', native2: '#aee1ff' },
+    glb: { file: 'imac-24', native: '#3378a4', native2: '#aee1ff', webcam: { barrel: ['Lens'], glass: ['Lens'] } },
   },
   'studio-display': {
     family: 'desktop', brand: 'Apple', label: 'Studio Display', finishes: F.display,
